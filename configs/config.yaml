@@ -3,10 +3,10 @@
 # specify here default training configuration
 defaults:
   - trainer: default.yaml
-  - model: mnist_model.yaml
-  - datamodule: mnist_datamodule.yaml
+  - model: greecefire_CNN_model.yaml
+  - datamodule: greecefire_datamodule.yaml
   - callbacks: default.yaml # set this to null if you don't want to use callbacks
-  - logger: null # set logger here or use command line (e.g. `python run.py logger=wandb`)
+  - logger: wandb # set logger here or use command line (e.g. `python run.py logger=wandb`)
 
   - experiment: null
   - hparams_search: null
@@ -24,7 +24,7 @@ defaults:
 work_dir: ${hydra:runtime.cwd}
 
 # path to folder with data
-data_dir: ${work_dir}/data/
+data_dir: ${work_dir}
 
 # use `python run.py debug=true` for easy debugging!
 # this will run 1 train, val and test loop with only 1 batch
@@ -41,3 +41,28 @@ ignore_warnings: True
 # check performance on test set, using the best model achieved during training
 # lightning chooses best model based on metric specified in checkpoint callback
 test_after_training: True
+
+
+sel_dynamic_features: [
+#    Fpar_500m,
+    LST_Day_1km,
+    LST_Night_1km,
+    1 km 16 days NDVI,
+#    ET_500m,
+    era5_max_u10,
+    era5_max_v10,
+    era5_max_t2m,
+    era5_max_tp,
+#    era5_min_u10,
+#    era5_min_v10,
+    era5_min_t2m,
+    era5_min_tp,
+]
+
+sel_static_features : [
+    dem_mean,
+  aspect_mean,
+  slope_mean,
+  roads_density_2020,
+  population_density
+]

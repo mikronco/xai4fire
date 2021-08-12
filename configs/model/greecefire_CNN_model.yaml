@@ -1,0 +1,6 @@
+_target_: src.models.greece_fire_models.CNN_fire_model
+
+dynamic_features: ${sel_dynamic_features}
+static_features: ${sel_static_features}
+lr: 0.001
+weight_decay: 0.0005
