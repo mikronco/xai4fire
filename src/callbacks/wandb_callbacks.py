@@ -101,7 +101,7 @@ class LogConfusionMatrix(Callback):
         self.ready = True
 
     def on_validation_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
     ):
         """Gather data from single batch."""
         if self.ready:
@@ -159,7 +159,7 @@ class LogF1PrecRecHeatmap(Callback):
         self.ready = True
 
     def on_validation_batch_end(
-        self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
     ):
         """Gather data from single batch."""
         if self.ready:
@@ -249,3 +249,84 @@ class LogImagePredictions(Callback):
                     ]
                 }
             )
+
+
+class LogMapPredictionsCNN(Callback):
+    """Logs a map prediction image to wandb.
+    Example adapted from:
+        https://wandb.ai/wandb/wandb-lightning/reports/Image-Classification-using-PyTorch-Lightning--VmlldzoyODk1NzY
+    """
+
+    def __init__(self, dynamic_features: list, static_features: list, days: list):
+        super().__init__()
+        self.dynamic_features = dynamic_features
+        self.static_features = static_features
+        self.days = [int(x) for x in days]
+        self.ready = True
+
+    def on_sanity_check_start(self, trainer, pl_module):
+        self.ready = False
+
+    def on_sanity_check_end(self, trainer, pl_module):
+        """Start executing this callback only after all validation sanity checks end."""
+        self.ready = True
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if self.ready:
+            logger = get_wandb_logger(trainer=trainer)
+            experiment = logger.experiment
+            print("LogMapPredictionsCNN callback")
+            print(self.dynamic_features)
+            print(self.static_features)
+            print(self.days)
+            # get a validation batch from the validation dat loader
+            for day, dynamic_features, static_features, target in trainer.datamodule.map_dataset(self.dynamic_features,
+                                                                                                 self.static_features,
+                                                                                                 self.days):
+                x, y = target.shape
+                inputs = torch.cat([dynamic_features, static_features], dim=0).unsqueeze(dim=0).float().cuda()
+                inputs = torch.nn.functional.pad(inputs, (19, 19), 'constant', 0)
+                print(inputs.shape)
+                logits = pl_module(inputs)
+                print(logits.shape)
+
+                preds_proba = torch.exp(logits)[:, 1]
+                # log the images as wandb Image
+                print("Preds proba shape wandb:", preds_proba.shape)
+                print("Target shape wandb:", target.shape)
+
+                experiment.log(
+                    {
+                        f"Images/{experiment.name}":
+                            wandb.Image(preds_proba.cpu().detach().numpy().squeeze(),
+                                        caption=f"Prediction {day}")
+                    }
+                )
+                experiment.log(
+                    {
+                        f"Images/{experiment.name}":
+                            wandb.Image(target.cpu().detach().numpy().squeeze(), caption=f"Target {day}")
+                    }
+                )
+
+            # val_samples = next(iter(trainer.datamodule.val_dataloader()))
+            # val_imgs, val_labels = val_samples
+
+            # # run the batch through the network
+            # val_imgs = val_imgs.to(device=pl_module.device)
+            # logits = pl_module(val_imgs)
+            # preds = torch.argmax(logits, axis=-1)
+            #
+            # # log the images as wandb Image
+            # experiment.log(
+            #     {
+            #         f"Images/{experiment.name}": [
+            #             wandb.Image(x, caption=f"Pred:{pred}, Label:{y}")
+            #             for x, pred, y in zip(
+            #                 val_imgs[: self.num_samples],
+            #                 preds[: self.num_samples],
+            #                 val_labels[: self.num_samples],
+            #             )
+            #         ]
+            #     }
+            # )

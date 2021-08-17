@@ -24,3 +24,9 @@ log_confusion_matrix:
 log_image_predictions:
   _target_: src.callbacks.wandb_callbacks.LogImagePredictions
   num_samples: 8
+
+log_map_predictions_cnn:
+  _target_: src.callbacks.wandb_callbacks.LogMapPredictionsCNN
+  sel_static_features: ${sel_static_features}
+  sel_dynamic_features: ${sel_dynamic_features}
+  days: [4177, 4178]

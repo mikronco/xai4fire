@@ -194,29 +194,36 @@ class CNN_fire_model(LightningModule):
             self,
             dynamic_features=[],
             static_features=[],
+            positive_weight: float = 0.8,
             lr: float = 0.001,
+            lr_scheduler_step: int = 10,
+            lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005):
         super().__init__()
 
         # this line ensures params passed to LightningModule will be saved to ckpt
         # it also allows to access params with 'self.hparams' attribute
         self.save_hyperparameters()
+        self.lr_scheduler_step = lr_scheduler_step
+        self.lr_scheduler_gamma = lr_scheduler_gamma
 
-        # The LSTM takes word embeddings as inputs, and outputs hidden states
-        self.conv1 = nn.Conv2d(len(static_features) + len(dynamic_features), 32, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        # CNN definition
+        self.conv1 = nn.Conv2d(len(static_features) + len(dynamic_features), 8, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
+        self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1)
         self.drop1 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(4608, 128)
+        self.fc1 = nn.Linear(576, 128)
         self.drop2 = nn.Dropout(0.5)
         self.fc2 = nn.Linear(128, 64)
         self.drop3 = nn.Dropout(0.5)
         self.fc3 = nn.Linear(64, 2)
         self.drop4 = nn.Dropout(0.5)
         self.drop5 = nn.Dropout(0.5)
+        self.positive_weight = positive_weight
+        assert (positive_weight < 1) and (positive_weight > 0)
 
         # loss function
-        self.criterion = torch.nn.NLLLoss(weight=torch.tensor([0.2, 0.8]))
+        self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1 - positive_weight, positive_weight]))
         # use separate metric instance for train, val and test step
         # to ensure a proper reduction over the epoch
 
@@ -237,6 +244,7 @@ class CNN_fire_model(LightningModule):
         x = F.max_pool2d(F.relu(self.conv2(x)), 2)
         x = F.max_pool2d(F.relu(self.conv3(x)), 2)
         x = torch.flatten(x, 1)
+        # print(x.shape)
         x = F.relu(self.fc1(x))
         x = F.relu(self.drop5(self.fc2(x)))
         x = self.fc3(x)
@@ -248,9 +256,13 @@ class CNN_fire_model(LightningModule):
 
     def step(self, batch: Any):
         dynamic, static, clc, y = batch
+        # print(dynamic.shape, static.shape, y.shape)
+        # print(dynamic.shape, static.shape, y.shape)
         dynamic = dynamic.float()
         static = static.float()
         y = y.long()
+        # print(y)
+        # print(y.sum())
         logits = self.forward(torch.cat([dynamic, static], dim=1))
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
@@ -317,5 +329,5 @@ class CNN_fire_model(LightningModule):
         optimizer = torch.optim.Adam(
             params=self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
         )
-        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+        lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.lr_scheduler_step, gamma=self.lr_scheduler_gamma)
         return {'optimizer': optimizer, 'lr_scheduler': lr_scheduler}

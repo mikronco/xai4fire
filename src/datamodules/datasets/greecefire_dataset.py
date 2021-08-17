@@ -11,9 +11,9 @@ import torchvision
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 
 dataset_path = Path.home() / 'jh-shared/iprapas/uc3'
-root = dataset_path / 'image_classification'
+root = dataset_path / 'datasets'
 
-dynamic_features = [
+all_dynamic_features = [
     'Fpar_500m',
     'LST_Day_1km',
     'LST_Night_1km',
@@ -33,21 +33,89 @@ dynamic_features = [
 
 coordinates = ['x', 'y']
 
-static_features = ['dem_mean',
-                   'dem_std',
-                   'aspect_mean',
-                   'aspect_std',
-                   'slope_mean',
-                   'slope_std',
-                   'roads_density_2020',
-                   'population_density']
+all_static_features = ['dem_mean',
+                       'dem_std',
+                       'aspect_mean',
+                       'aspect_std',
+                       'slope_mean',
+                       'slope_std',
+                       'roads_density_2020',
+                       'population_density']
 
 target = 'burned_areas'
 
+ds = xr.open_dataset(dataset_path / 'dataset_greece_unzipped.nc')
+
+
+class FireDS(Dataset):
+    def __init__(self, data_dir=root, access_mode='spatiotemporal', problem_class='classification', train=True,
+                 dynamic_features=all_dynamic_features,
+                 static_features=all_static_features, categorical_features=None, nan_fill=-1.):
+        """
+        Args:
+            csv_file (string): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.static_features = static_features
+        self.dynamic_features = dynamic_features
+        self.categorical_features = categorical_features
+        self.access_mode = access_mode
+        self.problem_class = problem_class
+        self.data_dir = data_dir
+        assert problem_class in ['classification', 'segmentation']
+        if problem_class == 'classification':
+            self.target = 'burned'
+        else:
+            self.target = 'burned_area'
+        assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
+        if access_mode == 'spatial':
+            ds_path = data_dir / 'spatial_dataset_25x25_wmean.nc'
+        elif access_mode == 'temporal':
+            ds_path = data_dir / 'temporal_dataset_10_wmean.nc'
+        else:
+            ds_path = data_dir / 'spatiotemporal_dataset_10x25x25_wmean.nc'
+
+        self.ds = xr.open_dataset(ds_path)
+
+        # TODO change time split to account for date from time_
+        self.train_ds = self.ds.isel(patch=slice(0, 17068))
+        self.test_ds = self.ds.isel(patch=slice(17068, len(self.ds.patch)))
+
+        if train:
+            self.ds = self.train_ds
+        else:
+            self.ds = self.test_ds
+
+        self.nan_fill = float(nan_fill)
+        self.ds = self.ds.load()
+
+    def __len__(self):
+        return len(self.ds.patch)
+
+    def __getitem__(self, idx):
+        chunk = self.ds.isel(patch=idx)
+
+        def norm_ds(dataset: xr.Dataset, feature: str):
+            return (dataset[feature] - dataset[feature + '_mean']) / dataset[feature + '_std']
+
+        dynamic = np.stack([norm_ds(chunk, feature) for feature in self.dynamic_features])
+        # lstm, convlstm expect input that has the time dimension first
+        if 'temp' in self.access_mode:
+            dynamic = np.moveaxis(dynamic, 0, 1)
+        static = np.stack([norm_ds(chunk, feature) for feature in self.static_features])
+        labels = chunk[self.target].values
+        if self.nan_fill:
+            dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
+            static = np.nan_to_num(static, nan=self.nan_fill)
+        # labels = np.nan_to_num(labels, nan=int(self.nan_fill))
+        return dynamic, static, 0, labels
+
 
 class GreeceFireDataset(Dataset):
-    def __init__(self, data_dir=root, mode='lstm', train=True, sel_dynamic_features=dynamic_features,
-                 sel_static_features=static_features):
+    def __init__(self, data_dir=root, mode='lstm', train=True, sel_dynamic_features=all_dynamic_features,
+                 sel_static_features=all_static_features):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -169,4 +237,61 @@ class GreeceFireDataset(Dataset):
         static = np.transpose(static, (2, 1, 0))
         dynamic = self.dynamic_transforms(dynamic)
         static = self.static_transforms(static)
-        return dynamic, static, clc, labels
+
+        return dynamic, static, 0, labels
+
+
+class FireDatasetWholeDay(Dataset):
+    """Face Landmarks dataset."""
+
+    def __init__(self, ds=ds, dynamic_atts=[], static_atts=[], target='burned_areas', dynamic_transform=None,
+                 static_transform=None, target_transform=None):
+        """
+        Args:
+            csv_file (string): Path to the csv file with annotations.
+            root_dir (string): Directory with all the images.
+            dynamic_transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.ds = ds
+        self.target = target
+        self.dynamic_atts = dynamic_atts
+        self.static_atts = static_atts
+
+        self.x_dim = ds.dims['x']
+        self.y_dim = ds.dims['y']
+        self.dynamic_transform = dynamic_transform
+        self.static_transform = static_transform
+
+        self.target_transform = target_transform
+
+    def __len__(self):
+        return len(self.ds.time)
+
+    def __getitem__(self, idx):
+        dynamic_vector = np.empty((len(self.dynamic_atts), self.y_dim, self.x_dim))
+        chunk = self.ds.isel(time=idx)
+        for i, att in enumerate(self.dynamic_atts):
+            dynamic_vector[i] = chunk[att].values
+        dynamic_vector[np.isnan(dynamic_vector)] = -1
+
+        static_vector = np.empty((len(self.static_atts), self.y_dim, self.x_dim))
+        for i, att in enumerate(self.static_atts):
+            static_vector[i] = chunk[att].values
+        static_vector[np.isnan(static_vector)] = -1
+
+        target = chunk[self.target].values
+        target[np.isnan(target)] = 0
+        dynamic_vector = np.transpose(dynamic_vector, (2, 1, 0))
+        static_vector = np.transpose(static_vector, (2, 1, 0))
+
+        if self.dynamic_transform:
+            dynamic_vector = self.dynamic_transform(dynamic_vector)
+
+        if self.static_transform:
+            static_vector = self.static_transform(static_vector)
+
+        if self.target_transform:
+            target = self.target_transform(target)
+
+        return chunk['time'].values, dynamic_vector, static_vector, target
