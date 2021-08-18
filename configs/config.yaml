@@ -4,7 +4,7 @@
 defaults:
   - trainer: default.yaml
   - model: greecefire_CNN_model.yaml
-  - datamodule: fireds_datamodule.yaml
+  - datamodule: fireds_spatial_datamodule.yaml
   - callbacks: default.yaml # set this to null if you don't want to use callbacks
   - logger: wandb # set logger here or use command line (e.g. `python run.py logger=wandb`)
 
@@ -44,7 +44,7 @@ test_after_training: True
 
 
 sel_dynamic_features: [
-#    'Fpar_500m',
+    'Fpar_500m',
     'LST_Day_1km',
     'LST_Night_1km',
     '1 km 16 days NDVI',
@@ -62,7 +62,7 @@ sel_dynamic_features: [
 sel_static_features : [
     'dem_mean',
 #  aspect_mean,
-#  slope_mean,
-#  'roads_density_2020',
-#  population_density
+#  slope_mean,///////
+  'roads_density_2020',
+  'population_density'
 ]

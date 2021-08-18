@@ -1,9 +1,7 @@
 from typing import Optional, Tuple
 
 from pytorch_lightning import LightningDataModule
-from torch.utils.data import ConcatDataset, DataLoader, Dataset, random_split
-from torchvision.datasets import MNIST
-from torchvision.transforms import transforms
+from torch.utils.data import DataLoader
 from src.datamodules.datasets.greecefire_dataset import GreeceFireDataset, FireDatasetWholeDay, FireDS
 
 
@@ -31,10 +29,14 @@ class FireDSDataModule(LightningDataModule):
             access_mode: str = 'temporal',
             problem_class: str = 'classification',
             nan_fill: float = 1.,
-            sel_dynamic_features=[],
-            sel_static_features=[]
+            sel_dynamic_features=None,
+            sel_static_features=None
     ):
         super().__init__()
+        if sel_dynamic_features is None:
+            sel_dynamic_features = []
+        if sel_static_features is None:
+            sel_static_features = []
         self.nan_fill = nan_fill
         self.access_mode = access_mode
         self.problem_class = problem_class

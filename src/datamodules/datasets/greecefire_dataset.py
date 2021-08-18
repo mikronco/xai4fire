@@ -9,7 +9,7 @@ import pandas as pd
 import os
 import torchvision
 from torch.utils.data import Dataset, DataLoader, TensorDataset
-
+from pathlib import Path
 dataset_path = Path.home() / 'jh-shared/iprapas/uc3'
 root = dataset_path / 'datasets'
 
@@ -48,27 +48,35 @@ ds = xr.open_dataset(dataset_path / 'dataset_greece_unzipped.nc')
 
 
 class FireDS(Dataset):
-    def __init__(self, data_dir=root, access_mode='spatiotemporal', problem_class='classification', train=True,
-                 dynamic_features=all_dynamic_features,
-                 static_features=all_static_features, categorical_features=None, nan_fill=-1.):
+    def __init__(self, data_dir: Path = root, access_mode: str = 'spatiotemporal', problem_class: str = 'classification',
+                 train: bool = True, dynamic_features: list = None, static_features: list = None,
+                 categorical_features: list = None, nan_fill: float = -1.):
         """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
+        @param data_dir: root path that containts dataset as netcdf (.nc) files
+        @param access_mode: spatial, temporal or spatiotemporal
+        @param problem_class: classification or segmentation
+        @param train: True gets samples from [2009-2019]. False get samples from 2020
+        @param dynamic_features: selects the dynamic features to return
+        @param static_features: selects the static features to return
+        @param categorical_features: selects the categorical features
+        @param nan_fill: Fills nan with the value specified here
         """
+        if static_features is None:
+            static_features = all_static_features
+        if dynamic_features is None:
+            dynamic_features = all_dynamic_features
         self.static_features = static_features
         self.dynamic_features = dynamic_features
         self.categorical_features = categorical_features
         self.access_mode = access_mode
         self.problem_class = problem_class
         self.data_dir = data_dir
+        self.nan_fill = nan_fill
         assert problem_class in ['classification', 'segmentation']
         if problem_class == 'classification':
             self.target = 'burned'
         else:
-            self.target = 'burned_area'
+            self.target = 'burned_areas'
         assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
         if access_mode == 'spatial':
             ds_path = data_dir / 'spatial_dataset_25x25_wmean.nc'
@@ -88,7 +96,6 @@ class FireDS(Dataset):
         else:
             self.ds = self.test_ds
 
-        self.nan_fill = float(nan_fill)
         self.ds = self.ds.load()
 
     def __len__(self):
@@ -109,20 +116,16 @@ class FireDS(Dataset):
         if self.nan_fill:
             dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
             static = np.nan_to_num(static, nan=self.nan_fill)
-        # labels = np.nan_to_num(labels, nan=int(self.nan_fill))
         return dynamic, static, 0, labels
 
 
 class GreeceFireDataset(Dataset):
-    def __init__(self, data_dir=root, mode='lstm', train=True, sel_dynamic_features=all_dynamic_features,
-                 sel_static_features=all_static_features):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
+    def __init__(self, data_dir=root, mode='lstm', train=True, sel_dynamic_features=None,
+                 sel_static_features=None):
+        if sel_static_features is None:
+            sel_static_features = all_static_features
+        if sel_dynamic_features is None:
+            sel_dynamic_features = all_dynamic_features
         self.dynamic_file_paths = sorted(
             [os.path.join(data_dir, 'dynamic', x) for x in os.listdir(data_dir / 'dynamic')],
             key=os.path.getmtime)[1:]
@@ -130,8 +133,8 @@ class GreeceFireDataset(Dataset):
                                         key=os.path.getmtime)
         self.num_static_features = len(sel_static_features)
         self.num_dynamic_features = len(sel_dynamic_features)
-        self.static_features_idx = [i for i, x in enumerate(static_features) if x in sel_static_features]
-        self.dynamic_features_idx = [i for i, x in enumerate(dynamic_features) if x in sel_dynamic_features]
+        self.static_features_idx = [i for i, x in enumerate(all_static_features) if x in sel_static_features]
+        self.dynamic_features_idx = [i for i, x in enumerate(all_dynamic_features) if x in sel_dynamic_features]
         self.train = train
         if self.train:
             self.dynamic_file_paths = [x for x in self.dynamic_file_paths if '2020' not in x]

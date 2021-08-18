@@ -1,0 +1,11 @@
+_target_: src.models.greece_fire_models.LSTM_fire_model
+
+dynamic_features: ${sel_dynamic_features}
+static_features: ${sel_static_features}
+hidden_size: 128
+lstm_layers: 3
+positive_weight: 0.65
+lr: 0.01
+lr_scheduler_step: 10
+lr_scheduler_gamma: 0.1
+weight_decay: 0.0005
