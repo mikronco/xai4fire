@@ -5,8 +5,8 @@
 
 defaults:
   - override /trainer: default.yaml # choose trainer from 'configs/trainer/'
-  - override /model: greecefire_CNN_model.yaml
-  - override /datamodule: fireds_spatial_datamodule.yaml
+  - override /model: greecefire_ConvLSTM_model.yaml
+  - override /datamodule: fireds_spatiotemporal_datamodule.yaml
   - override /callbacks: default.yaml
   - override /logger: wandb.yaml
 
@@ -15,7 +15,7 @@ defaults:
 
 logger:
   wandb:
-    name: ${oc.env:WANDB_NAME_PREFIX}_cnn_cls_${now:%Y%m%d_%H%M}
+    name: ${oc.env:WANDB_NAME_PREFIX}_ConvLSTM_cls_${now:%Y%m%d_%H%M}
 
 model:
   positive_weight: 0.65
