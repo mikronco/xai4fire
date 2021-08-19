@@ -245,8 +245,6 @@ class GreeceFireDataset(Dataset):
 
 
 class FireDatasetWholeDay(Dataset):
-    """Face Landmarks dataset."""
-
     def __init__(self, ds=ds, dynamic_atts=[], static_atts=[], target='burned_areas', dynamic_transform=None,
                  static_transform=None, target_transform=None):
         """
