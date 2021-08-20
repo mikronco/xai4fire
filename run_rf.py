@@ -105,5 +105,5 @@ if __name__ == '__main__':
     from sklearn.metrics import precision_recall_curve, auc, roc_auc_score
     y_pred_proba = clf.predict_proba(X_test)[:, 1]
     precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
-    print("AUC-PR:", auc(recall, precision))
+    print("AUPRC:", auc(recall, precision))
     print("AUROC:", roc_auc_score(y_test, y_pred_proba))
