@@ -7,6 +7,7 @@ from src.models.modules.fire_modules import SimpleLSTM, SimpleConvLSTM, SimpleCN
 import torch
 import numpy as np
 
+
 class ConvLSTM_fire_model(LightningModule):
     """
     A LightningModule organizes your PyTorch code into 5 sections:
@@ -34,10 +35,6 @@ class ConvLSTM_fire_model(LightningModule):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
         # it also allows to access params with 'self.hparams' attribute
-        if static_features is None:
-            static_features = []
-        if dynamic_features is None:
-            dynamic_features = []
         self.save_hyperparameters()
 
         self.model = SimpleConvLSTM(hparams=self.hparams)
@@ -56,11 +53,6 @@ class ConvLSTM_fire_model(LightningModule):
 
         self.test_accuracy = Accuracy()
         self.test_auc = AUROC(pos_label=1)
-
-        self.lr_scheduler_step = lr_scheduler_step
-        self.lr_scheduler_gamma = lr_scheduler_gamma
-        self.lr = lr
-        self.weight_decay = weight_decay
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
