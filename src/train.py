@@ -83,6 +83,7 @@ def train(config: DictConfig) -> Optional[float]:
 
     # Make sure everything closed properly
     log.info("Finalizing!")
+
     utils.finish(
         config=config,
         model=model,

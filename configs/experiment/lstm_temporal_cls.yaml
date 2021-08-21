@@ -29,7 +29,10 @@ model:
 datamodule:
   batch_size: 512
   num_workers: 16
-  pin_memory: False
+  pin_memory: True
   access_mode: 'temporal'
   problem_class: 'classification'
   nan_fill: -1.0
+
+trainer:
+  max_epochs: 20

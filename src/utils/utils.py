@@ -68,16 +68,16 @@ def extras(config: DictConfig) -> None:
 
 @rank_zero_only
 def print_config(
-    config: DictConfig,
-    fields: Sequence[str] = (
-        "trainer",
-        "model",
-        "datamodule",
-        "callbacks",
-        "logger",
-        "seed",
-    ),
-    resolve: bool = True,
+        config: DictConfig,
+        fields: Sequence[str] = (
+                "trainer",
+                "model",
+                "datamodule",
+                "callbacks",
+                "logger",
+                "seed",
+        ),
+        resolve: bool = True,
 ) -> None:
     """Prints content of DictConfig using Rich library and its tree structure.
 
@@ -113,12 +113,12 @@ def empty(*args, **kwargs):
 
 @rank_zero_only
 def log_hyperparameters(
-    config: DictConfig,
-    model: pl.LightningModule,
-    datamodule: pl.LightningDataModule,
-    trainer: pl.Trainer,
-    callbacks: List[pl.Callback],
-    logger: List[pl.loggers.LightningLoggerBase],
+        config: DictConfig,
+        model: pl.LightningModule,
+        datamodule: pl.LightningDataModule,
+        trainer: pl.Trainer,
+        callbacks: List[pl.Callback],
+        logger: List[pl.loggers.LightningLoggerBase],
 ) -> None:
     """This method controls which parameters from Hydra config are saved by Lightning loggers.
 
@@ -155,19 +155,64 @@ def log_hyperparameters(
     trainer.logger.log_hyperparams = empty
 
 
+# import pandas as pd
+# import xarray as xr
+#
+# def get_day_ds(ds, t, dynamic_features, static_features, access_mode, patch_size, lag):
+#     lenx = len(ds['x'])
+#     leny = len(ds['y'])
+#     patch_half = patch_size // 2
+#     ds_list = []
+#     for x in range(lenx):
+#         for y in range(leny):
+#             if access_mode == 'spatiotemporal':
+#                 block = ds.isel(time=slice(t + 1 - lag, t + 1), x=slice(x - patch_half, x + patch_half + 1),
+#                                    y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y', 'time'])
+#             elif access_mode == 'spatial':
+#                 block = ds.isel(time=t, x=slice(x - patch_half, x + patch_half + 1),
+#                                   y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y'])
+#             elif access_mode == 'temporal':
+#                 block = ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
+#             elif access_mode == 'pixel':
+#                 block = ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
+#
+#
+#
+#             year = pd.DatetimeIndex([ds['time'][t].values]).year[0]
+#             # clc
+#             if year < 2012:
+#                 block['clc'] = block['clc_2006']
+#             elif year < 2018:
+#                 block['clc'] = block['clc_2012']
+#             else:
+#                 block['clc'] = block['clc_2018']
+#             # population density
+#             block['population_density'] = block[f'population_density_{year}']
+#             #                 block = block.drop([x for x in list(block.variables) if ('clc_' in x) or ('population_density_' in x)])
+#             ds_list.append(block)
+#     new_ds = xr.concat(ds_list, dim='patch')
+#     ds
+
+import gc
+
+
 def finish(
-    config: DictConfig,
-    model: pl.LightningModule,
-    datamodule: pl.LightningDataModule,
-    trainer: pl.Trainer,
-    callbacks: List[pl.Callback],
-    logger: List[pl.loggers.LightningLoggerBase],
+        config: DictConfig,
+        model: pl.LightningModule,
+        datamodule: pl.LightningDataModule,
+        trainer: pl.Trainer,
+        callbacks: List[pl.Callback],
+        logger: List[pl.loggers.LightningLoggerBase],
 ) -> None:
     """Makes sure everything closed properly."""
 
     # without this sweeps with wandb logger might crash!
+    del datamodule
+    del trainer
+    del model
     for lg in logger:
         if isinstance(lg, pl.loggers.wandb.WandbLogger):
             import wandb
 
             wandb.finish()
+    gc.collect()

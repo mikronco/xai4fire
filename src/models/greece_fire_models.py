@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 from torchmetrics.classification.accuracy import Accuracy
 from torchmetrics import AUC, ConfusionMatrix, AUROC
-from src.models.modules.fire_modules import SimpleLSTM, SimpleConvLSTM, SimpleCNN
+from src.models.modules.fire_modules import SimpleLSTM, SimpleConvLSTM, SimpleCNN, resnet18cnn
 import torch
 import numpy as np
 
@@ -124,11 +124,8 @@ class ConvLSTM_fire_model(LightningModule):
         pass
 
     def configure_optimizers(self):
-        """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        See examples here:
-            https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
+        """
+        See https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
         """
         optimizer = torch.optim.Adam(
             params=self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
@@ -256,11 +253,8 @@ class LSTM_fire_model(LightningModule):
         pass
 
     def configure_optimizers(self):
-        """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        See examples here:
-            https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
+        """
+        See https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
         """
         optimizer = torch.optim.Adam(
             params=self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
@@ -297,7 +291,8 @@ class CNN_fire_model(LightningModule):
         # it also allows to access params with 'self.hparams' attribute
         self.save_hyperparameters()
 
-        self.model = SimpleCNN(hparams=self.hparams)
+        # self.model = SimpleCNN(hparams=self.hparams)
+        self.model = resnet18cnn(hparams=self.hparams)
 
         assert (positive_weight < 1) and (positive_weight > 0)
         self.positive_weight = positive_weight
@@ -382,11 +377,8 @@ class CNN_fire_model(LightningModule):
         pass
 
     def configure_optimizers(self):
-        """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        See examples here:
-            https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
+        """
+        See https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
         """
         optimizer = torch.optim.Adam(
             params=self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay

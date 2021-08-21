@@ -35,6 +35,7 @@ from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 from src.models.modules.convlstm import ConvLSTM
 
+
 class SimpleConvLSTM(nn.Module):
     def __init__(self, hparams: dict):
         super().__init__()
@@ -51,6 +52,12 @@ class SimpleConvLSTM(nn.Module):
                                  True,
                                  True,
                                  False)
+
+        m = resnet18(pretrained=False)
+        m.conv1 = nn.Conv2d(hidden_size, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        num_ftrs = m.fc.in_features
+        m.fc = nn.Linear(num_ftrs, 2)
+        self.m = m
         # cnn part
         self.conv1 = nn.Conv2d(hidden_size, 8, kernel_size=3, stride=1, padding=1)
         self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
@@ -65,13 +72,14 @@ class SimpleConvLSTM(nn.Module):
     def forward(self, x: torch.Tensor):
         _, last_states = self.convlstm(x)
         x = last_states[0][0]
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(F.relu(self.conv2(x)), 2)
-        x = F.max_pool2d(F.relu(self.conv3(x)), 2)
-        x = torch.flatten(x, 1)
-        x = F.relu(self.drop1(self.fc1(x)))
-        x = F.relu(self.drop2(self.fc2(x)))
-        return torch.nn.functional.log_softmax(self.fc3(x), dim=1)
+        # x = F.relu(self.conv1(x))
+        # x = F.max_pool2d(F.relu(self.conv2(x)), 2)
+        # x = F.max_pool2d(F.relu(self.conv3(x)), 2)
+        # x = torch.flatten(x, 1)
+        # x = F.relu(self.drop1(self.fc1(x)))
+        # x = F.relu(self.drop2(self.fc2(x)))
+        return torch.nn.functional.log_softmax(self.m(x), dim=1)
+
 
 class SimpleLSTM(nn.Module):
     def __init__(self, hparams: dict):
@@ -131,3 +139,22 @@ class SimpleCNN(nn.Module):
         x = F.relu(self.drop1(self.fc1(x)))
         x = F.relu(self.drop2(self.fc2(x)))
         return torch.nn.functional.log_softmax(self.fc3(x), dim=1)
+
+
+from torchvision.models.resnet import resnet18
+
+
+class resnet18cnn(nn.Module):
+    def __init__(self, hparams: dict):
+        super().__init__()
+
+        # CNN definition
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        m = resnet18(pretrained=False)
+        m.conv1 = nn.Conv2d(input_dim, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        num_ftrs = m.fc.in_features
+        m.fc = nn.Linear(num_ftrs, 2)
+        self.m = m
+
+    def forward(self, x: torch.Tensor):
+        return torch.nn.functional.log_softmax(self.m(x), dim=1)
