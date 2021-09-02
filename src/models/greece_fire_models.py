@@ -2,8 +2,8 @@ from typing import Any, List
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 from torchmetrics.classification.accuracy import Accuracy
-from torchmetrics import AUC, ConfusionMatrix, AUROC
-from src.models.modules.fire_modules import SimpleLSTM, SimpleConvLSTM, SimpleCNN, resnet18cnn
+from torchmetrics import AUC, ConfusionMatrix, AUROC, AveragePrecision
+from src.models.modules.fire_modules import SimpleLSTM, SimpleLSTMAttention, SimpleConvLSTM, SimpleCNN, resnet18cnn
 import torch
 import numpy as np
 
@@ -47,12 +47,15 @@ class ConvLSTM_fire_model(LightningModule):
         # Accuracy, AUROC, AUC, ConfusionMatrix
         self.train_accuracy = Accuracy()
         self.train_auc = AUROC(pos_label=1)
+        self.train_auprc = AveragePrecision()
 
         self.val_accuracy = Accuracy()
         self.val_auc = AUROC(pos_label=1)
+        self.val_auprc = AveragePrecision()
 
         self.test_accuracy = Accuracy()
         self.test_auc = AUROC(pos_label=1)
+        self.test_auprc = AveragePrecision()
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -78,10 +81,13 @@ class ConvLSTM_fire_model(LightningModule):
         # log train metrics
         acc = self.train_accuracy(preds, targets)
         auc = self.train_auc(preds_proba, targets)
+        auprc = self.train_auprc(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -97,10 +103,13 @@ class ConvLSTM_fire_model(LightningModule):
         # log val metrics
         acc = self.val_accuracy(preds, targets)
         auc = self.val_auc(preds_proba, targets)
+        auprc = self.val_auprc(preds_proba, targets)
+
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
@@ -113,10 +122,14 @@ class ConvLSTM_fire_model(LightningModule):
         # log test metrics
         acc = self.test_accuracy(preds, targets)
         auc = self.test_auc(preds_proba, targets)
+        auprc = self.test_auprc(preds_proba, targets)
+
 
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         self.log("test/acc", acc, on_step=False, on_epoch=True)
         self.log("test/auc", auc, on_step=False, on_epoch=True)
+        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
+
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
@@ -164,7 +177,7 @@ class LSTM_fire_model(LightningModule):
         # it also allows to access params with 'self.hparams' attribute
         self.save_hyperparameters()
 
-        self.model = SimpleLSTM(hparams=self.hparams)
+        self.model = SimpleLSTMAttention(hparams=self.hparams)
 
         # loss function
         self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1 - positive_weight, positive_weight]))
@@ -174,12 +187,15 @@ class LSTM_fire_model(LightningModule):
         # Accuracy, AUROC, AUC, ConfusionMatrix
         self.train_accuracy = Accuracy()
         self.train_auc = AUROC(pos_label=1)
+        self.train_auprc = AveragePrecision()
 
         self.val_accuracy = Accuracy()
         self.val_auc = AUROC(pos_label=1)
+        self.val_auprc = AveragePrecision()
 
         self.test_accuracy = Accuracy()
         self.test_auc = AUROC(pos_label=1)
+        self.test_auprc = AveragePrecision()
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -207,10 +223,13 @@ class LSTM_fire_model(LightningModule):
         # log train metrics
         acc = self.train_accuracy(preds, targets)
         auc = self.train_auc(preds_proba, targets)
+        auprc = self.train_auprc(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -226,10 +245,13 @@ class LSTM_fire_model(LightningModule):
         # log val metrics
         acc = self.val_accuracy(preds, targets)
         auc = self.val_auc(preds_proba, targets)
+        auprc = self.val_auprc(preds_proba, targets)
+
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
@@ -242,10 +264,14 @@ class LSTM_fire_model(LightningModule):
         # log test metrics
         acc = self.test_accuracy(preds, targets)
         auc = self.test_auc(preds_proba, targets)
+        auprc = self.test_auprc(preds_proba, targets)
+
 
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         self.log("test/acc", acc, on_step=False, on_epoch=True)
         self.log("test/auc", auc, on_step=False, on_epoch=True)
+        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
+
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
@@ -305,12 +331,15 @@ class CNN_fire_model(LightningModule):
         # Accuracy, AUROC, AUC, ConfusionMatrix
         self.train_accuracy = Accuracy()
         self.train_auc = AUROC(pos_label=1)
+        self.train_auprc = AveragePrecision()
 
         self.val_accuracy = Accuracy()
         self.val_auc = AUROC(pos_label=1)
+        self.val_auprc = AveragePrecision()
 
         self.test_accuracy = Accuracy()
         self.test_auc = AUROC(pos_label=1)
+        self.test_auprc = AveragePrecision()
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -328,13 +357,17 @@ class CNN_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
+
         # log train metrics
         acc = self.train_accuracy(preds, targets)
         auc = self.train_auc(preds_proba, targets)
-        from sklearn.metrics import roc_auc_score
+        auprc = self.train_auprc(preds_proba, targets)
+
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -350,10 +383,13 @@ class CNN_fire_model(LightningModule):
         # log val metrics
         acc = self.val_accuracy(preds, targets)
         auc = self.val_auc(preds_proba, targets)
+        auprc = self.val_auprc(preds_proba, targets)
+
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
         self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
@@ -366,10 +402,14 @@ class CNN_fire_model(LightningModule):
         # log test metrics
         acc = self.test_accuracy(preds, targets)
         auc = self.test_auc(preds_proba, targets)
+        auprc = self.test_auprc(preds_proba, targets)
+
 
         self.log("test/loss", loss, on_step=False, on_epoch=True)
         self.log("test/acc", acc, on_step=False, on_epoch=True)
         self.log("test/auc", auc, on_step=False, on_epoch=True)
+        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
+
 
         return {"loss": loss, "preds": preds, "targets": targets}
 
