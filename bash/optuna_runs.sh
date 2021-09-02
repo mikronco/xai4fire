@@ -10,4 +10,3 @@ python run.py -m hparams_search=greecefire_optuna experiment=lstm_temporal_cls
 
 echo "Running experiment optuna clstm_spatiotemporal_cls"
 python run.py -m hparams_search=greecefire_optuna experiment=clstm_spatiotemporal_cls
-

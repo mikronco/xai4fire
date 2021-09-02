@@ -1,5 +1,6 @@
 import logging
 import os
+import gc
 import warnings
 from typing import List, Sequence
 
@@ -192,8 +193,6 @@ def log_hyperparameters(
 #             ds_list.append(block)
 #     new_ds = xr.concat(ds_list, dim='patch')
 #     ds
-
-import gc
 
 
 def finish(
