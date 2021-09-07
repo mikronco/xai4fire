@@ -171,13 +171,18 @@ class LSTM_fire_model(LightningModule):
             positive_weight: float = 0.8,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
-            weight_decay: float = 0.0005):
+            weight_decay: float = 0.0005,
+            attention: bool = True
+    ):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
         # it also allows to access params with 'self.hparams' attribute
         self.save_hyperparameters()
-
-        self.model = SimpleLSTMAttention(hparams=self.hparams)
+        self.attention = attention
+        if self.attention:
+            self.model = SimpleLSTMAttention(hparams=self.hparams)
+        else:
+            self.model = SimpleLSTM(hparams=self.hparams)
 
         # loss function
         self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1 - positive_weight, positive_weight]))
