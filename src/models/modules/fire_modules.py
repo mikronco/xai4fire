@@ -169,6 +169,7 @@ class Attention(nn.Module):
 
         return representations, attentions
 
+
 class SimpleLSTMAttention(nn.Module):
     def __init__(self, hparams: dict):
         super().__init__()
@@ -206,11 +207,6 @@ class SimpleLSTMAttention(nn.Module):
         z = self.fc1(self.dropout(z))
         z = self.fc2(self.dropout(z))
         return torch.nn.functional.log_softmax(z, dim=1)
-
-    # def forward(self, x: torch.Tensor):
-    #     lstm_out, _ = self.lstm(x)
-    #     x = self.fc_nn(lstm_out[:, -1, :])
-    #     return torch.nn.functional.log_softmax(x, dim=1)
 
 
 class SimpleCNN(nn.Module):
