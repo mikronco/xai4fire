@@ -11,6 +11,8 @@ from pytorch_lightning.loggers import LoggerCollection, WandbLogger
 from pytorch_lightning.utilities import rank_zero_only
 from sklearn import metrics
 from sklearn.metrics import f1_score, precision_score, recall_score
+import gc
+from src.datamodules.greecefire_datamodule import FireDatasetWholeDay
 
 
 def get_wandb_logger(trainer: Trainer) -> WandbLogger:
@@ -253,17 +255,33 @@ class LogImagePredictions(Callback):
             )
 
 
-class LogMapPredictionsCNN(Callback):
+class LogMapPredictions(Callback):
     """Logs a map prediction image to wandb.
     Example adapted from:
         https://wandb.ai/wandb/wandb-lightning/reports/Image-Classification-using-PyTorch-Lightning--VmlldzoyODk1NzY
     """
 
-    def __init__(self, dynamic_features: list, static_features: list, days: list):
+    def __init__(self, day: int, access_mode: str, dynamic_features: list, static_features: list, batch_size: int,
+                 num_workers: int, nan_fill: float):
         super().__init__()
-        self.dynamic_features = dynamic_features
-        self.static_features = static_features
-        self.days = [int(x) for x in days]
+        lag, patch_size = (0, 0)
+        if access_mode == 'temporal':
+            lag, patch_size = (10, 0)
+        if access_mode == 'spatial':
+            lag, patch_size = (0, 25)
+        if access_mode == 'spatiotemporal':
+            lag, patch_size = (10, 25)
+        self.access_mode = access_mode
+        self.day = day
+        self.dataset = FireDatasetWholeDay(day, access_mode, patch_size, lag, dynamic_features, static_features,
+                                           nan_fill)
+        self.len_x = self.dataset.len_x
+        self.len_y = self.dataset.len_y
+        from torch.utils.data import DataLoader
+
+        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
+                                     pin_memory=True)
+
         self.ready = True
 
     def on_sanity_check_start(self, trainer, pl_module):
@@ -273,62 +291,45 @@ class LogMapPredictionsCNN(Callback):
         """Start executing this callback only after all validation sanity checks end."""
         self.ready = True
 
-    def on_validation_epoch_end(self, trainer, pl_module):
+    def on_train_end(self, trainer, pl_module):
         if self.ready:
+            torch.cuda.empty_cache()
+            pl_module.eval()
             logger = get_wandb_logger(trainer=trainer)
             experiment = logger.experiment
             print("LogMapPredictionsCNN callback")
-            print(self.dynamic_features)
-            print(self.static_features)
-            print(self.days)
+
+            print(self.day)
             # get a validation batch from the validation dat loader
-            for day, dynamic_features, static_features, target in trainer.datamodule.map_dataset(self.dynamic_features,
-                                                                                                 self.static_features,
-                                                                                                 self.days):
-                x, y = target.shape
-                inputs = torch.cat([dynamic_features, static_features], dim=0).unsqueeze(dim=0).float().cuda()
-                inputs = torch.nn.functional.pad(inputs, (19, 19), 'constant', 0)
-                print(inputs.shape)
+            outputs = []
+            for i, (dynamic, static) in enumerate(self.dataloader):
+                if self.access_mode == 'spatial':
+                    dynamic = dynamic.float()
+                    static = static.float()
+                    inputs = torch.cat([dynamic, static], dim=1)
+                if self.access_mode == 'temporal':
+                    bsize, timesteps, _ = dynamic.shape
+                    static = static.unsqueeze(dim=1)
+                    repeat_list = [1 for _ in range(static.dim())]
+                    repeat_list[1] = timesteps
+                    static = static.repeat(repeat_list)
+                    inputs = torch.cat([dynamic, static], dim=2).float()
+                if self.access_mode == 'spatiotemporal':
+                    bsize, timesteps, _, _, _ = dynamic.shape
+                    static = static.unsqueeze(dim=1)
+                    repeat_list = [1 for _ in range(static.dim())]
+                    repeat_list[1] = timesteps
+                    static = static.repeat(repeat_list)
+                    inputs = torch.cat([dynamic, static], dim=2).float()
+                inputs = inputs.cuda()
+                print(i, inputs.shape)
                 logits = pl_module(inputs)
-                print(logits.shape)
-
                 preds_proba = torch.exp(logits)[:, 1]
-                # log the images as wandb Image
-                print("Preds proba shape wandb:", preds_proba.shape)
-                print("Target shape wandb:", target.shape)
+                outputs.append(preds_proba.detach().cpu())
 
-                experiment.log(
-                    {
-                        f"Images/{experiment.name}":
-                            wandb.Image(preds_proba.cpu().detach().numpy().squeeze(),
-                                        caption=f"Prediction {day}")
-                    }
-                )
-                experiment.log(
-                    {
-                        f"Images/{experiment.name}":
-                            wandb.Image(target.cpu().detach().numpy().squeeze(), caption=f"Target {day}")
-                    }
-                )
-
-            # val_samples = next(iter(trainer.datamodule.val_dataloader()))
-            # val_imgs, val_labels = val_samples
-
-            # # run the batch through the network
-            # val_imgs = val_imgs.to(device=pl_module.device)
-            # logits = pl_module(val_imgs)
-            # preds = torch.argmax(logits, axis=-1)
-            #
-            # # log the images as wandb Image
-            # experiment.log(
-            #     {
-            #         f"Images/{experiment.name}": [
-            #             wandb.Image(x, caption=f"Pred:{pred}, Label:{y}")
-            #             for x, pred, y in zip(
-            #                 val_imgs[: self.num_samples],
-            #                 preds[: self.num_samples],
-            #                 val_labels[: self.num_samples],
-            #             )
-            #         ]
-            #     }
-            # )
+            outputs = torch.cat(outputs, dim=0)
+            outputs = torch.tensor(outputs)
+            outputs = outputs.reshape(self.len_y, self.len_x)
+            im = plt.imshow(outputs.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
+            # Log the plot
+            experiment.log({"Fire Danger Map": im})
