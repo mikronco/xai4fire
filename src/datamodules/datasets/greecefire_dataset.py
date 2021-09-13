@@ -81,11 +81,11 @@ class FireDS(Dataset):
             self.target = 'burned_areas'
         assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
         if access_mode == 'spatial':
-            ds_path = data_dir / 'spatial_dataset_25x25_wmean.nc'
+            ds_path = data_dir / 'spatial_dataset_clc_25x25_wmean.nc'
         elif access_mode == 'temporal':
-            ds_path = data_dir / 'temporal_dataset_10_wmean.nc'
+            ds_path = data_dir / 'temporal_dataset_clc_10_wmean.nc'
         else:
-            ds_path = data_dir / 'spatiotemporal_dataset_10x25x25_wmean.nc'
+            ds_path = data_dir / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'
 
         self.ds_orig = ds
         self.ds = xr.open_dataset(ds_path)
@@ -123,26 +123,26 @@ def norm_ds(input_dataset: xr.Dataset, mean_dataset: xr.Dataset, feature: str):
     return (input_dataset[feature] - mean_dataset[feature + '_mean']) / mean_dataset[feature + '_std']
 
 
-def get_pixel_feature_ds(ds, t=0, x=0, y=0, access_mode='temporal', patch_size=0, lag=0):
+def get_pixel_feature_ds(the_ds, t=0, x=0, y=0, access_mode='temporal', patch_size=0, lag=0):
     assert access_mode in ['spatial', 'temporal', 'spatiotemporal']
     assert lag >= 0 and patch_size >= 0 and t >= 0 and x >= 0 and y >= 0
     patch_half = patch_size // 2
-    assert x >= patch_half and x + patch_half < ds.dims['x']
-    assert y >= patch_half and y + patch_half < ds.dims['y']
+    assert x >= patch_half and x + patch_half < the_ds.dims['x']
+    assert y >= patch_half and y + patch_half < the_ds.dims['y']
     #     len_x = ds.dims['x'] - patch_size
     #     len_y = ds.dims['y'] - patch_size
     if access_mode == 'spatiotemporal':
-        block = ds.isel(time=slice(t + 1 - lag, t + 1), x=slice(x - patch_half, x + patch_half + 1),
-                        y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y', 'time'])
+        block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=slice(x - patch_half, x + patch_half + 1),
+                            y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y', 'time'])
     elif access_mode == 'temporal':
-        block = ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
+        block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
     elif access_mode == 'spatial':
-        block = ds.isel(x=slice(x - patch_half, x + patch_half + 1),
-                        y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y'])
+        block = the_ds.isel(x=slice(x - patch_half, x + patch_half + 1),
+                            y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y'])
     if access_mode == 'spatial':
-        year = pd.DatetimeIndex([ds['time'].values]).year[0]
+        year = pd.DatetimeIndex([the_ds['time'].values]).year[0]
     else:
-        year = pd.DatetimeIndex([ds['time'][t].values]).year[0]
+        year = pd.DatetimeIndex([the_ds['time'][t].values]).year[0]
 
     # clc
     if year < 2012:
@@ -157,10 +157,13 @@ def get_pixel_feature_ds(ds, t=0, x=0, y=0, access_mode='temporal', patch_size=0
     return block
 
 
-def get_pixel_feature_vector(ds, mean_ds, t=0, x=0, y=0, access_mode='temporal', patch_size=0, lag=0,
+def get_pixel_feature_vector(the_ds, mean_ds, t=0, x=0, y=0, access_mode='temporal', patch_size=0, lag=0,
                              dynamic_features=None,
-                             static_features=None, nan_fill=-1.0):
-    chunk = get_pixel_feature_ds(ds, t=t, x=x, y=y, access_mode=access_mode, patch_size=patch_size, lag=lag)
+                             static_features=None, nan_fill=-1.0, override_whole=False):
+    if override_whole:
+        chunk = the_ds
+    else:
+        chunk = get_pixel_feature_ds(the_ds, t=t, x=x, y=y, access_mode=access_mode, patch_size=patch_size, lag=lag)
     dynamic = np.stack([norm_ds(chunk, mean_ds, feature) for feature in dynamic_features])
     if 'temp' in access_mode:
         dynamic = np.moveaxis(dynamic, 0, 1)
@@ -171,9 +174,38 @@ def get_pixel_feature_vector(ds, mean_ds, t=0, x=0, y=0, access_mode='temporal',
     return dynamic, static
 
 
+# class FireDatasetOneDay(Dataset):
+#     def __init__(self, days, access_mode='temporal', patch_size=0, lag=10, dynamic_features=None,
+#                  static_features=None, nan_fill=-1.0):
+#
+#         self.ds = ds.isel(time=days)
+#         self.target = target
+#         self.dynamic_features = dynamic_features
+#         self.static_features = static_features
+#         dataset_path = Path.home() / f'jh-shared/iprapas/uc3/datasets/spatial_dataset_clc_25x25_wmean.nc'
+#         self.mean_ds = xr.open_dataset(dataset_path).load()
+#         self.x_dim = ds.dims['x']
+#         self.y_dim = ds.dims['y']
+#
+#     def __len__(self):
+#         return len(self.ds.time)
+#
+#     def __getitem__(self, idx):
+#         chunk = self.ds.isel(time=idx)
+#
+#         dynamic = np.stack([norm_ds(chunk, self.mean_ds, feature) for feature in self.dynamic_features])
+#         static = np.stack([norm_ds(chunk, self.mean_ds, feature) for feature in self.static_features])
+#
+#
+#         target = chunk[self.target].values
+#         target[np.isnan(target)] = 0
+#
+#         return chunk['time'].values, dynamic, static, target
+
+
 class FireDatasetWholeDay(Dataset):
     def __init__(self, day, access_mode='temporal', patch_size=0, lag=10, dynamic_features=None,
-                 static_features=None, nan_fill=-1.0):
+                 static_features=None, nan_fill=-1.0, override_whole=False):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -192,6 +224,7 @@ class FireDatasetWholeDay(Dataset):
                 s = f'{lag}x{patch_size}x{patch_size}'
         elif patch_size:
             s = f'{patch_size}x{patch_size}'
+        self.override_whole = override_whole
         dataset_path = Path.home() / f'jh-shared/iprapas/uc3/datasets/{access_mode}_dataset_{s}_wmean.nc'
         self.mean_ds = xr.open_dataset(dataset_path).load()
         self.ds = self.ds.load()
@@ -206,6 +239,8 @@ class FireDatasetWholeDay(Dataset):
         self.static_features = static_features
 
     def __len__(self):
+        if self.override_whole:
+            return 1
         return self.len_x * self.len_y
 
     def __getitem__(self, idx):
@@ -220,5 +255,5 @@ class FireDatasetWholeDay(Dataset):
                                                    self.lag,
                                                    self.dynamic_features,
                                                    self.static_features,
-                                                   self.nan_fill)
+                                                   self.nan_fill, self.override_whole)
         return dynamic, static

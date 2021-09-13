@@ -262,7 +262,7 @@ class LogMapPredictions(Callback):
     """
 
     def __init__(self, day: int, access_mode: str, dynamic_features: list, static_features: list, batch_size: int,
-                 num_workers: int, nan_fill: float):
+                 num_workers: int, nan_fill: float, override_whole: bool):
         super().__init__()
         lag, patch_size = (0, 0)
         if access_mode == 'temporal':
@@ -274,7 +274,7 @@ class LogMapPredictions(Callback):
         self.access_mode = access_mode
         self.day = day
         self.dataset = FireDatasetWholeDay(day, access_mode, patch_size, lag, dynamic_features, static_features,
-                                           nan_fill)
+                                           nan_fill, override_whole)
         self.len_x = self.dataset.len_x
         self.len_y = self.dataset.len_y
         from torch.utils.data import DataLoader
@@ -283,6 +283,7 @@ class LogMapPredictions(Callback):
                                      pin_memory=True)
 
         self.ready = True
+        self.override_whole = override_whole
 
     def on_sanity_check_start(self, trainer, pl_module):
         self.ready = False
@@ -291,7 +292,7 @@ class LogMapPredictions(Callback):
         """Start executing this callback only after all validation sanity checks end."""
         self.ready = True
 
-    def on_train_end(self, trainer, pl_module):
+    def on_validation_epoch_end(self, trainer, pl_module):
         if self.ready:
             torch.cuda.empty_cache()
             pl_module.eval()
@@ -303,6 +304,16 @@ class LogMapPredictions(Callback):
             # get a validation batch from the validation dat loader
             outputs = []
             for i, (dynamic, static) in enumerate(self.dataloader):
+                if self.override_whole:
+                    dynamic = dynamic.float()
+                    static = static.float()
+                    inputs = torch.cat([dynamic, static], dim=1)
+                    logits = pl_module(inputs.cuda()).squeeze()
+                    preds_proba = torch.exp(logits[1])
+                    im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
+                    # Log the plot
+                    experiment.log({"Fire Danger Map": im})
+                    return
                 if self.access_mode == 'spatial':
                     dynamic = dynamic.float()
                     static = static.float()
@@ -322,7 +333,6 @@ class LogMapPredictions(Callback):
                     static = static.repeat(repeat_list)
                     inputs = torch.cat([dynamic, static], dim=2).float()
                 inputs = inputs.cuda()
-                print(i, inputs.shape)
                 logits = pl_module(inputs)
                 preds_proba = torch.exp(logits)[:, 1]
                 outputs.append(preds_proba.detach().cpu())

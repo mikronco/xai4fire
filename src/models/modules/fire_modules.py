@@ -34,6 +34,8 @@ from tqdm import tqdm
 from joblib import Parallel, delayed
 from sklearn.preprocessing import StandardScaler
 from src.models.modules.convlstm import ConvLSTM
+from torchvision.models.resnet import resnet18
+from fastai.vision.models import unet
 
 
 class SimpleConvLSTM(nn.Module):
@@ -234,10 +236,59 @@ class SimpleCNN(nn.Module):
         return torch.nn.functional.log_softmax(self.fc3(x), dim=1)
 
 
-from torchvision.models.resnet import resnet18
+class SimpleFCN(nn.Module):
+    def __init__(self, hparams: dict):
+        super().__init__()
+        # CNN definition
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        self.conv1 = nn.Conv2d(input_dim, 8, kernel_size=(6, 6), stride=(1, 1), padding=(1, 1))
+        self.conv11 = nn.Conv2d(8, 8, kernel_size=(5, 5), stride=(1, 1))
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1))
+        self.conv22 = nn.Conv2d(16, 16, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1))
+        self.conv3 = nn.Conv2d(16, 16, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1))
+        self.conv33 = nn.Conv2d(16, 16, kernel_size=(5, 5), stride=(1, 1), padding=(1, 1))
+        self.fconv = nn.Conv2d(16, 10 * 10 * 16, kernel_size=(10, 10), stride=(1, 1), padding=(0, 0))
+        self.conv1_1x1 = nn.Conv2d(10 * 10 * 16, 64, (1, 1))
+        self.drop1 = nn.Dropout(0.5)
+        self.conv2_1x1 = nn.Conv2d(64, 32, (1, 1))
+        self.drop2 = nn.Dropout(0.5)
+        self.conv3_1x1 = nn.Conv2d(32, 2, (1, 1))
+
+    def forward(self, x: torch.Tensor):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv11(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv22(x))
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv33(x))
+        print(x.shape)
+        x = self.fconv(x)
+        print(x.shape)
+
+        x = F.relu(self.drop1(self.conv1_1x1(x)))
+        print(x.shape)
+
+        x = F.relu(self.drop2(self.conv2_1x1(x)))
+        print(x.shape)
+
+        return torch.nn.functional.log_softmax(self.conv3_1x1(x), dim=1)
 
 
-class resnet18cnn(nn.Module):
+class DynUnet(nn.Module):
+    def __init__(self, hparams: dict):
+        super(DynUnet, self).__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        m = resnet18()
+        m = nn.Sequential(*list(m.children())[:-2])
+        m[0] = nn.Conv2d(input_dim, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.net = unet.DynamicUnet(m, 1, (25, 25), norm_type=None)
+
+    def forward(self, x):
+        out = self.net(x)
+        return out
+
+
+class Resnet18CNN(nn.Module):
     def __init__(self, hparams: dict):
         super().__init__()
 

@@ -64,5 +64,5 @@ sel_static_features : [
 #  aspect_mean,
 #  slope_mean,///////
   'roads_density_2020',
-  'population_density'
+#  'population_density'
 ]

@@ -32,4 +32,5 @@ log_map_predictions:
   batch_size: ${datamodule.batch_size}
   num_workers: ${datamodule.num_workers}
   day: 4155
+  override_whole: True
 

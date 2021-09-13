@@ -8,26 +8,25 @@ from sklearn.metrics import confusion_matrix, plot_confusion_matrix, classificat
 from matplotlib import pyplot as plt
 
 features_ = [
-    'Fpar_500m',
-    'Lai_500m',
+    # 'Fpar_500m',
+    # 'Lai_500m',
     'LST_Day_1km',
     'LST_Night_1km',
     '1 km 16 days NDVI',
     '1 km 16 days EVI',
-    'ET_500m',
-    'LE_500m',
-    'PET_500m',
-    'PLE_500m',
-    'era5_max_u10',
-    'era5_max_v10',
-    'era5_max_t2m',
-    'era5_max_tp',
-    'era5_min_u10',
-    'era5_min_v10',
-    'era5_min_t2m',
-    'era5_min_tp',
+    # 'ET_500m',
+    # 'LE_500m',
+    # 'PET_500m',
+    # 'PLE_500m',
+    # 'era5_max_u10',
+    # 'era5_max_v10',
+    # 'era5_max_t2m',
+    # 'era5_max_tp',
+    # 'era5_min_u10',
+    # 'era5_min_v10',
+    # 'era5_min_t2m',
+    # 'era5_min_tp',
     'fwi',
-    #     'danger_risk'
 ]
 
 features = features_ + [f'{x}_10day_mean' for x in features_]
@@ -43,7 +42,7 @@ static_features = [
     # 'slope_std',
     'roads_density_2020',
     'population_density',
-    'clc'
+    # 'clc'
 ]
 
 target = 'burned'
@@ -69,7 +68,7 @@ features_to_exclude = [
     #  'era5_min_tp'
 ]
 
-dataset_path = Path.home() / 'jh-shared/iprapas/uc3/datasets/pixel_dataset_wmean.nc'
+dataset_path = Path.home() / 'jh-shared/iprapas/uc3/datasets/pixel_dataset_clc_wmean.nc'
 
 if __name__ == '__main__':
     ds = xr.open_dataset(dataset_path)
