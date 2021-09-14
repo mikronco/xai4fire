@@ -5,14 +5,12 @@ from pathlib import Path
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
-
+import fsspec
+import zarr
 import os
 import torchvision
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from pathlib import Path
-
-dataset_path = Path.home() / 'jh-shared/iprapas/uc3'
-root = dataset_path / 'datasets'
 
 all_dynamic_features = [
     'Fpar_500m',
@@ -45,13 +43,27 @@ all_static_features = ['dem_mean',
 
 target = 'burned_areas'
 
-ds = xr.open_dataset(dataset_path / 'dataset_greece_unzipped.nc')
+run = 'remote'
+datacube_path = Path.home() / 'jh-shared/iprapas/uc3'
+if run == 'remote':
+    url = 'https://storage.de.cloud.ovh.net/v1/AUTH_84d6da8e37fe4bb5aea18902da8c1170/uc3/uc3cube.zarr'
+    ds = xr.open_zarr(fsspec.get_mapper(url), consolidated=True)
+else:
+    ds = xr.open_dataset(datacube_path / 'dataset_greece_unzipped.nc')
+
+# TODO Change this to where the datasets are according to your path
+dataset_root = datacube_path / 'datasets'
+ds_paths = {
+    'spatial': dataset_root / 'spatial_dataset_clc_25x25_wmean.nc',
+    'temporal': dataset_root / 'temporal_dataset_clc_10_wmean.nc',
+    'spatiotemporal': dataset_root / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'
+}
 
 
 class FireDS(Dataset):
-    def __init__(self, data_dir: Path = root, access_mode: str = 'spatiotemporal',
+    def __init__(self, access_mode: str = 'spatiotemporal',
                  problem_class: str = 'classification',
-                 train: bool = True, dynamic_features: list = None, static_features: list = None,
+                 train_val_test: str = 'train', dynamic_features: list = None, static_features: list = None,
                  categorical_features: list = None, nan_fill: float = -1.):
         """
         @param data_dir: root path that containts dataset as netcdf (.nc) files
@@ -72,7 +84,6 @@ class FireDS(Dataset):
         self.categorical_features = categorical_features
         self.access_mode = access_mode
         self.problem_class = problem_class
-        self.data_dir = data_dir
         self.nan_fill = nan_fill
         assert problem_class in ['classification', 'segmentation']
         if problem_class == 'classification':
@@ -80,23 +91,25 @@ class FireDS(Dataset):
         else:
             self.target = 'burned_areas'
         assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
-        if access_mode == 'spatial':
-            ds_path = data_dir / 'spatial_dataset_clc_25x25_wmean.nc'
-        elif access_mode == 'temporal':
-            ds_path = data_dir / 'temporal_dataset_clc_10_wmean.nc'
-        else:
-            ds_path = data_dir / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'
+
+        ds_path = ds_paths[access_mode]
 
         self.ds_orig = ds
         self.ds = xr.open_dataset(ds_path)
-
-        # TODO change time split to account for date from time_
-        self.train_ds = self.ds.isel(patch=slice(0, 17068))
-        self.test_ds = self.ds.isel(patch=slice(17068, len(self.ds.patch)))
-
-        if train:
-            self.ds = self.train_ds
+        if access_mode == 'spatial':
+            dates = pd.DatetimeIndex(self.ds.time.values)
         else:
+            dates = pd.DatetimeIndex(self.ds.isel(time=0).time_.values)
+
+        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([2019, 2020]))[0]))
+        self.val_ds = self.ds.isel(patch=list(np.where(dates.year == 2019)[0]))
+        self.test_ds = self.ds.isel(patch=list(np.where(dates.year == 2020)[0]))
+
+        if train_val_test == 'train':
+            self.ds = self.train_ds
+        elif train_val_test == 'val':
+            self.ds = self.val_ds
+        elif train_val_test == 'test':
             self.ds = self.test_ds
 
         self.ds = self.ds.load()
@@ -106,7 +119,6 @@ class FireDS(Dataset):
 
     def __getitem__(self, idx):
         chunk = self.ds.isel(patch=idx)
-
         dynamic = np.stack([norm_ds(chunk, chunk, feature) for feature in self.dynamic_features])
         # lstm, convlstm expect input that has the time dimension first
         if 'temp' in self.access_mode:
@@ -174,35 +186,6 @@ def get_pixel_feature_vector(the_ds, mean_ds, t=0, x=0, y=0, access_mode='tempor
     return dynamic, static
 
 
-# class FireDatasetOneDay(Dataset):
-#     def __init__(self, days, access_mode='temporal', patch_size=0, lag=10, dynamic_features=None,
-#                  static_features=None, nan_fill=-1.0):
-#
-#         self.ds = ds.isel(time=days)
-#         self.target = target
-#         self.dynamic_features = dynamic_features
-#         self.static_features = static_features
-#         dataset_path = Path.home() / f'jh-shared/iprapas/uc3/datasets/spatial_dataset_clc_25x25_wmean.nc'
-#         self.mean_ds = xr.open_dataset(dataset_path).load()
-#         self.x_dim = ds.dims['x']
-#         self.y_dim = ds.dims['y']
-#
-#     def __len__(self):
-#         return len(self.ds.time)
-#
-#     def __getitem__(self, idx):
-#         chunk = self.ds.isel(time=idx)
-#
-#         dynamic = np.stack([norm_ds(chunk, self.mean_ds, feature) for feature in self.dynamic_features])
-#         static = np.stack([norm_ds(chunk, self.mean_ds, feature) for feature in self.static_features])
-#
-#
-#         target = chunk[self.target].values
-#         target[np.isnan(target)] = 0
-#
-#         return chunk['time'].values, dynamic, static, target
-
-
 class FireDatasetWholeDay(Dataset):
     def __init__(self, day, access_mode='temporal', patch_size=0, lag=10, dynamic_features=None,
                  static_features=None, nan_fill=-1.0, override_whole=False):
@@ -217,16 +200,9 @@ class FireDatasetWholeDay(Dataset):
             self.ds = ds.isel(time=range(day - lag + 1, day + 1)).load()
         else:
             self.ds = ds.isel(time=day).load()
-        s = ''
-        if lag:
-            s = f'{lag}'
-            if patch_size:
-                s = f'{lag}x{patch_size}x{patch_size}'
-        elif patch_size:
-            s = f'{patch_size}x{patch_size}'
         self.override_whole = override_whole
-        dataset_path = Path.home() / f'jh-shared/iprapas/uc3/datasets/{access_mode}_dataset_{s}_wmean.nc'
-        self.mean_ds = xr.open_dataset(dataset_path).load()
+        mean_ds_path = ds_paths[access_mode]
+        self.mean_ds = xr.open_dataset(mean_ds_path).load()
         self.ds = self.ds.load()
         self.len_x = ds.dims['x'] - patch_size
         self.len_y = ds.dims['y'] - patch_size

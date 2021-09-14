@@ -47,15 +47,15 @@ class FireDSDataModule(LightningDataModule):
         self.sel_dynamic_features = sel_dynamic_features
         self.sel_static_features = sel_static_features
 
-        self.data_train = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train=True,
+        self.data_train = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train_val_test='train',
                                  dynamic_features=self.sel_dynamic_features,
                                  static_features=self.sel_static_features,
                                  categorical_features=None, nan_fill=self.nan_fill)
-        self.data_val = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train=False,
+        self.data_val = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train_val_test='val',
                                dynamic_features=self.sel_dynamic_features,
                                static_features=self.sel_static_features,
                                categorical_features=None, nan_fill=self.nan_fill)
-        self.data_test = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train=False,
+        self.data_test = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train_val_test='test',
                                 dynamic_features=self.sel_dynamic_features,
                                 static_features=self.sel_static_features,
                                 categorical_features=None, nan_fill=self.nan_fill)
