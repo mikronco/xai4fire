@@ -15,7 +15,7 @@ defaults:
 
 logger:
   wandb:
-    name: ${oc.env:WANDB_NAME_PREFIX}_cnn_cls_${now:%Y%m%d_%H%M}
+    name: ${oc.env:WANDB_NAME_PREFIX}_fnn_cls_${now:%Y%m%d_%H%M}
 
 model:
   positive_weight: 0.65
@@ -32,3 +32,7 @@ datamodule:
 
 trainer:
   max_epochs: 20
+
+callbacks:
+  log_map_predictions:
+    override_whole: True
