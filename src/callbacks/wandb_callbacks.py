@@ -1,7 +1,7 @@
 import glob
 import os
 from typing import List
-
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sn
 import torch
@@ -278,6 +278,7 @@ class LogMapPredictions(Callback):
         self.len_x = self.dataset.len_x
         self.len_y = self.dataset.len_y
         from torch.utils.data import DataLoader
+        self.num_iterations = max(1, len(self.dataset)//batch_size)
 
         self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
                                      pin_memory=True)
@@ -292,7 +293,7 @@ class LogMapPredictions(Callback):
         """Start executing this callback only after all validation sanity checks end."""
         self.ready = True
 
-    def on_validation_epoch_end(self, trainer, pl_module):
+    def on_train_end(self, trainer, pl_module):
         if self.ready:
             torch.cuda.empty_cache()
             pl_module.eval()
@@ -303,7 +304,7 @@ class LogMapPredictions(Callback):
             print(self.day)
             # get a validation batch from the validation dat loader
             outputs = []
-            for i, (dynamic, static) in enumerate(self.dataloader):
+            for i, (dynamic, static) in tqdm(enumerate(self.dataloader), total=self.num_iterations):
                 if self.override_whole:
                     dynamic = dynamic.float()
                     static = static.float()
