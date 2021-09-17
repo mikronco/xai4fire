@@ -42,6 +42,7 @@ ignore_warnings: True
 # lightning chooses best model based on metric specified in checkpoint callback
 test_after_training: True
 
+seed: 42
 
 sel_dynamic_features: [
     'Fpar_500m',
@@ -56,13 +57,14 @@ sel_dynamic_features: [
     'era5_min_u10',
     'era5_min_v10',
     'era5_min_t2m',
-    'era5_min_tp',
+#    'era5_min_tp',
+#    'fwi'
 ]
 
 sel_static_features : [
-    'dem_mean',
-#  aspect_mean,
-#  slope_mean,///////
+  'dem_mean',
+  'aspect_mean',
+  'slope_mean',
   'roads_density_2020',
-#  'population_density'
+  'population_density'
 ]
