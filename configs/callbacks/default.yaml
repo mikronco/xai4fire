@@ -23,14 +23,14 @@ log_confusion_matrix:
   _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
 
 #
-log_map_predictions:
-  _target_: src.callbacks.wandb_callbacks.LogMapPredictions
-  dynamic_features: ${sel_dynamic_features}
-  static_features: ${sel_static_features}
-  access_mode: ${datamodule.access_mode}
-  nan_fill: ${datamodule.nan_fill}
-  batch_size: ${datamodule.batch_size}
-  num_workers: ${datamodule.num_workers}
-  day: 4155
-  override_whole: False
+#log_map_predictions:
+#  _target_: src.callbacks.wandb_callbacks.LogMapPredictions
+#  dynamic_features: ${sel_dynamic_features}
+#  static_features: ${sel_static_features}
+#  access_mode: ${datamodule.access_mode}
+#  nan_fill: ${datamodule.nan_fill}
+#  batch_size: ${datamodule.batch_size}
+#  num_workers: ${datamodule.num_workers}
+#  day: 4155
+#  override_whole: False
 

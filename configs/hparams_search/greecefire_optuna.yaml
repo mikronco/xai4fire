@@ -38,7 +38,7 @@ hydra:
       consider_endpoints: false
       n_startup_trials: 10
       n_ei_candidates: 24
-      multivariate: false
+      multivariate: true
       warn_independent_sampling: true
 
     # define range of hyperparameters
@@ -46,14 +46,25 @@ hydra:
 #      datamodule.batch_size:
 #        type: categorical
 #        choices: [64, 128, 256, 512]
+#      model.positive_weight:
+#        type: float
+#        low: 0.5
+#        high: 0.95
       model.positive_weight:
         type: float
         low: 0.5
-        high: 0.95
+        high: 0.7
       model.lr:
         type: float
-        low: 0.0001
-        high: 0.2
+        low: 0.001
+        high: 0.05
+      model.weight_decay:
+        type: float
+        low: 0.001
+        high: 0.05
+      model.hidden_size:
+        type: categorical
+        choices: [16, 32, 64]
 #      model.lin1_size:
 #        type: categorical
 #        choices: [32, 64, 128, 256, 512]

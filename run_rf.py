@@ -13,8 +13,8 @@ features_ = [
     'LST_Day_1km',
     'LST_Night_1km',
     '1 km 16 days NDVI',
-    '1 km 16 days EVI',
-    # 'ET_500m',
+    # '1 km 16 days EVI',
+    'ET_500m',
     # 'LE_500m',
     # 'PET_500m',
     # 'PLE_500m',
@@ -34,11 +34,11 @@ features = features_ + [f'{x}_10day_mean' for x in features_]
 coordinates = ['x', 'y']
 
 static_features = [
-    'dem_mean',
+    # 'dem_mean',
     # 'dem_std',
     'aspect_mean',
     # 'aspect_std',
-    'slope_mean',
+    # 'slope_mean',
     # 'slope_std',
     'roads_density_2020',
     'population_density',
@@ -91,7 +91,7 @@ if __name__ == '__main__':
     X_train, X_test = train_df[features_filtered + static_features], test_df[features_filtered + static_features]
     y_train, y_test = train_df[target], test_df[target]
 
-    clf = RandomForestClassifier()
+    clf = RandomForestClassifier(n_estimators=500, criterion='gini')
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
 
@@ -102,6 +102,7 @@ if __name__ == '__main__':
     plot_precision_recall_curve(clf, X_test, y_test)
     plt.show()
     from sklearn.metrics import precision_recall_curve, auc, roc_auc_score
+
     y_pred_proba = clf.predict_proba(X_test)[:, 1]
     precision, recall, _ = precision_recall_curve(y_test, y_pred_proba)
     print("AUPRC:", auc(recall, precision))

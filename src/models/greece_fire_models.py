@@ -3,7 +3,8 @@ import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 from torchmetrics.classification.accuracy import Accuracy
 from torchmetrics import AUC, ConfusionMatrix, AUROC, AveragePrecision
-from src.models.modules.fire_modules import SimpleLSTM, SimpleLSTMAttention, SimpleConvLSTM, SimpleCNN, Resnet18CNN, \
+from src.models.modules.fire_modules import SK_CNN, SK_LSTM, SK_CLSTM, SimpleLSTM, SimpleLSTMAttention, SimpleConvLSTM, \
+    SimpleCNN, Resnet18CNN, \
     DynUnet, SimpleFCN
 import torch
 import numpy as np
@@ -27,7 +28,7 @@ class ConvLSTM_fire_model(LightningModule):
             dynamic_features=None,
             static_features=None,
             hidden_size: int = 32,
-            lstm_layers: int = 3,
+            lstm_layers: int = 1,
             lr: float = 0.001,
             positive_weight: float = 0.8,
             lr_scheduler_step: int = 10,
@@ -170,7 +171,7 @@ class LSTM_fire_model(LightningModule):
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005,
-            attention: bool = True
+            attention: bool = False
     ):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
@@ -180,7 +181,7 @@ class LSTM_fire_model(LightningModule):
         if self.attention:
             self.model = SimpleLSTMAttention(hparams=self.hparams)
         else:
-            self.model = SimpleLSTM(hparams=self.hparams)
+            self.model = SK_LSTM(hparams=self.hparams)
 
         # loss function
         self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1 - positive_weight, positive_weight]))
@@ -443,6 +444,7 @@ class CNN_fire_model(LightningModule):
             dynamic_features=None,
             static_features=None,
             positive_weight: float = 0.8,
+            hidden_size: int = 32,
             lr: float = 0.001,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
@@ -452,8 +454,8 @@ class CNN_fire_model(LightningModule):
         # it also allows to access params with 'self.hparams' attribute
         self.save_hyperparameters()
 
-        # self.model = SimpleCNN(hparams=self.hparams)
-        self.model = Resnet18CNN(hparams=self.hparams)
+        self.model = SK_CNN(hparams=self.hparams)
+        # self.model = Resnet18CNN(hparams=self.hparams)
 
         assert (positive_weight < 1) and (positive_weight > 0)
         self.positive_weight = positive_weight
@@ -558,6 +560,7 @@ class CNN_fire_model(LightningModule):
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.hparams.lr_scheduler_step,
                                                        gamma=self.hparams.lr_scheduler_gamma)
         return {'optimizer': optimizer, 'lr_scheduler': lr_scheduler}
+
 
 class FCN_fire_model(LightningModule):
     """

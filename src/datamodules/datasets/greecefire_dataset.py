@@ -43,7 +43,7 @@ all_static_features = ['dem_mean',
 
 target = 'burned_areas'
 
-run = 'remote'
+run = 'noa'
 datacube_path = Path.home() / 'jh-shared/iprapas/uc3'
 if run == 'remote':
     url = 'https://storage.de.cloud.ovh.net/v1/AUTH_84d6da8e37fe4bb5aea18902da8c1170/uc3/uc3cube.zarr'

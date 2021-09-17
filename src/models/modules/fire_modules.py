@@ -55,32 +55,41 @@ class SimpleConvLSTM(nn.Module):
                                  True,
                                  False)
 
-        m = resnet18(pretrained=False)
-        m.conv1 = nn.Conv2d(hidden_size, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        num_ftrs = m.fc.in_features
-        m.fc = nn.Linear(num_ftrs, 2)
-        self.m = m
+        # m = resnet18(pretrained=False)
+        # m.conv1 = nn.Conv2d(hidden_size, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        # num_ftrs = m.fc.in_features
+        # m.fc = nn.Linear(num_ftrs, 2)
+        # self.m = m
         # cnn part
-        self.conv1 = nn.Conv2d(hidden_size, 8, kernel_size=3, stride=1, padding=1)
-        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
-        self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1)
+        # self.conv1 = nn.Conv2d(hidden_size, 8, kernel_size=3, stride=1, padding=1)
+        # self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
+        # self.conv3 = nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1)
         # fully-connected part
-        self.fc1 = nn.Linear(576, 64)
+
+        kernel_size = 3
+        self.conv1 = nn.Conv2d(hidden_size, hidden_size, kernel_size=kernel_size, stride=1, padding=1)
         self.drop1 = nn.Dropout(0.5)
-        self.fc2 = nn.Linear(64, 32)
+        self.fc1 = nn.Linear(kernel_size * kernel_size * hidden_size * 16, 16)
         self.drop2 = nn.Dropout(0.5)
-        self.fc3 = nn.Linear(32, 2)
+        self.fc2 = nn.Linear(16, 8)
+        self.drop3 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(8, 2)
 
     def forward(self, x: torch.Tensor):
         _, last_states = self.convlstm(x)
         x = last_states[0][0]
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = torch.flatten(x, 1)
+        x = F.relu(self.drop1(self.fc1(x)))
+        x = F.relu(self.drop1(self.fc2(x)))
+        x = self.fc3(x)
         # x = F.relu(self.conv1(x))
         # x = F.max_pool2d(F.relu(self.conv2(x)), 2)
         # x = F.max_pool2d(F.relu(self.conv3(x)), 2)
         # x = torch.flatten(x, 1)
         # x = F.relu(self.drop1(self.fc1(x)))
         # x = F.relu(self.drop2(self.fc2(x)))
-        return torch.nn.functional.log_softmax(self.m(x), dim=1)
+        return torch.nn.functional.log_softmax(x, dim=1)
 
 
 class SimpleLSTM(nn.Module):
@@ -209,6 +218,82 @@ class SimpleLSTMAttention(nn.Module):
         z = self.fc1(self.dropout(z))
         z = self.fc2(self.dropout(z))
         return torch.nn.functional.log_softmax(z, dim=1)
+
+
+class SK_CLSTM(nn.Module):
+    def __init__(self, hparams: dict):
+        super().__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        hidden_size = hparams['hidden_size']
+        lstm_layers = hparams['lstm_layers']
+        self.convlstm = ConvLSTM(input_dim, hidden_size, (3, 3), 1, True, True, False)
+        self.fc1 = nn.Linear(hidden_size * 25 * 25, 16)
+        self.drop1 = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(16, 8)
+        self.drop2 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(8, 2)
+
+    def forward(self, x):
+        _, last_states = self.convlstm(x)
+        x = F.relu(last_states[0][0])
+        x = torch.flatten(x, 1)
+        x = F.relu(self.drop1(self.fc1(x)))
+        x = F.relu(self.drop2(self.fc2(x)))
+        x = self.fc3(x)
+        return torch.nn.functional.log_softmax(x, dim=1)
+
+
+
+class SK_LSTM(nn.Module):
+    def __init__(self, hparams: dict):
+        super().__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        hidden_size = hparams['hidden_size']
+        lstm_layers = hparams['lstm_layers']
+        self.lstm = nn.LSTM(input_dim, hidden_size=hidden_size, num_layers=1, batch_first=True)
+        self.fc1 = torch.nn.Linear(hidden_size, hidden_size)
+        self.drop1 = torch.nn.Dropout(0.5)
+        self.relu = torch.nn.ReLU()
+        self.fc2 = torch.nn.Linear(hidden_size, hidden_size//2)
+        self.drop2 = torch.nn.Dropout(0.5)
+        self.fc3 = torch.nn.Linear(hidden_size//2, 2)
+        self.fc_nn = torch.nn.Sequential(
+            self.fc1,
+            self.drop1,
+            self.relu,
+            self.fc2,
+            self.drop2,
+            self.relu,
+            self.fc3
+        )
+
+    def forward(self, x):
+        lstm_out, _ = self.lstm(x)
+        x = self.fc_nn(lstm_out[:, -1, :])
+        return torch.nn.functional.log_softmax(x, dim=1)
+
+
+class SK_CNN(nn.Module):
+    def __init__(self, hparams: dict):
+        super().__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        hidden_size = hparams['hidden_size']
+        kernel_size = 3
+        self.conv1 = nn.Conv2d(input_dim, hidden_size, kernel_size=kernel_size, stride=1, padding=1)
+        self.drop1 = nn.Dropout(0.5)
+        self.fc1 = nn.Linear(kernel_size * kernel_size * hidden_size * 16, 16)
+        self.drop2 = nn.Dropout(0.5)
+        self.fc2 = nn.Linear(16, 8)
+        self.drop3 = nn.Dropout(0.5)
+        self.fc3 = nn.Linear(8, 2)
+
+    def forward(self, x):
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = torch.flatten(x, 1)
+        x = F.relu(self.drop1(self.fc1(x)))
+        x = F.relu(self.drop1(self.fc2(x)))
+        x = self.fc3(x)
+        return torch.nn.functional.log_softmax(x, dim=1)
 
 
 class SimpleCNN(nn.Module):

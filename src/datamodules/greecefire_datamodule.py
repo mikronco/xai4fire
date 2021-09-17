@@ -41,6 +41,10 @@ class FireDSDataModule(LightningDataModule):
         self.access_mode = access_mode
         self.problem_class = problem_class
         self.batch_size = batch_size
+        if 'spat' in self.access_mode:
+            self.val_batch_size = 512
+        else:
+            self.val_batch_size = 2048
         self.num_workers = num_workers
         self.pin_memory = pin_memory
 
@@ -85,17 +89,17 @@ class FireDSDataModule(LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             dataset=self.data_val,
-            batch_size=self.batch_size,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            shuffle=False,
+            shuffle=True,
         )
 
     def test_dataloader(self):
         return DataLoader(
             dataset=self.data_test,
-            batch_size=self.batch_size,
+            batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            shuffle=False,
+            shuffle=True,
         )
