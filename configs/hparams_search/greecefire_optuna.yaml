@@ -50,10 +50,6 @@ hydra:
 #        type: float
 #        low: 0.5
 #        high: 0.95
-      model.positive_weight:
-        type: float
-        low: 0.5
-        high: 0.65
       model.lr:
         type: float
         low: 0.001
