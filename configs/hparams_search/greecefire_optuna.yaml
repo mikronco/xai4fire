@@ -25,7 +25,7 @@ hydra:
     direction: maximize
 
     # number of experiments that will be executed
-    n_trials: 25
+    n_trials: 30
 
     # choose Optuna hyperparameter sampler
     # learn more here: https://optuna.readthedocs.io/en/stable/reference/samplers.html
@@ -58,9 +58,9 @@ hydra:
         type: float
         low: 0.001
         high: 0.05
-#      model.lin1_size:
-#        type: categorical
-#        choices: [32, 64, 128, 256, 512]
+      model.hidden_size:
+        type: categorical
+        choices: [16, 32, 64]
 #      model.lin2_size:
 #        type: categorical
 #        choices: [32, 64, 128, 256, 512]
