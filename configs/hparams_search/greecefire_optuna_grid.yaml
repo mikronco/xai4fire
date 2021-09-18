@@ -1,0 +1,65 @@
+# @package _global_
+
+# example hyperparameter optimization of some experiment with Optuna:
+# python run.py -m hparams_search=greecefire_optuna experiment=clstm_spatiotemporal_cls
+# python run.py -m hparams_search=greecefire_optuna experiment=example_simple hydra.sweeper.n_trials=30
+# python run.py -m hparams_search=greecefire_optuna experiment=example_simple logger=wandb
+
+defaults:
+  - override /hydra/sweeper: optuna
+
+# choose metric which will be optimized by Optuna
+optimized_metric: "val/auc"
+
+hydra:
+  # here we define Optuna hyperparameter search
+  # it optimizes for value returned from function with @hydra.main decorator
+  # learn more here: https://hydra.cc/docs/next/plugins/optuna_sweeper
+  sweeper:
+    _target_: hydra_plugins.hydra_optuna_sweeper.optuna_sweeper.OptunaSweeper
+    storage: null
+    study_name: "Grid hparam Search"
+    n_jobs: 1
+
+    # 'minimize' or 'maximize' the objective
+    direction: maximize
+
+    # number of experiments that will be executed
+    n_trials: 20
+
+    # choose Optuna hyperparameter sampler
+    # learn more here: https://optuna.readthedocs.io/en/stable/reference/samplers.html
+    sampler:
+      _target_: optuna.samplers.GridSampler
+
+
+    # define range of hyperparameters
+    search_space:
+#      datamodule.batch_size:
+#        type: categorical
+#        choices: [64, 128, 256, 512]
+#      model.positive_weight:
+#        type: float
+#        low: 0.5
+#        high: 0.95
+      model.positive_weight:
+        type: categorical
+        choices: [0.5, 0.6]
+      model.lr:
+        type: categorical
+        choices: [0.01, 0.005, 0.001]
+      model.weight_decay:
+        type: categorical
+        choices: [0.05, 0.01, 0.005, 0.001]
+      model.hidden_size:
+        type: categorical
+        choices: [16, 32]
+#      model.lin1_size:
+#        type: categorical
+#        choices: [32, 64, 128, 256, 512]
+#      model.lin2_size:
+#        type: categorical
+#        choices: [32, 64, 128, 256, 512]
+#      model.lin3_size:
+#        type: categorical
+#        choices: [32, 64, 128, 256, 512]
