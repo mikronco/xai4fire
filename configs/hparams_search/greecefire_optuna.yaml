@@ -25,7 +25,7 @@ hydra:
     direction: maximize
 
     # number of experiments that will be executed
-    n_trials: 20
+    n_trials: 25
 
     # choose Optuna hyperparameter sampler
     # learn more here: https://optuna.readthedocs.io/en/stable/reference/samplers.html
@@ -53,7 +53,7 @@ hydra:
       model.positive_weight:
         type: float
         low: 0.5
-        high: 0.7
+        high: 0.65
       model.lr:
         type: float
         low: 0.001

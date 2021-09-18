@@ -24,13 +24,12 @@ hydra:
     # 'minimize' or 'maximize' the objective
     direction: maximize
 
-    # number of experiments that will be executed
-    n_trials: 20
 
     # choose Optuna hyperparameter sampler
     # learn more here: https://optuna.readthedocs.io/en/stable/reference/samplers.html
     sampler:
       _target_: optuna.samplers.GridSampler
+
 
 
     # define range of hyperparameters

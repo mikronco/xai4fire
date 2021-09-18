@@ -10,4 +10,4 @@ echo "Running experiment optuna cnn_spatial_cls"
 python run.py -m hparams_search=greecefire_optuna experiment=cnn_spatial_cls >> optuna_runs_cnn.log
 
 echo "Running experiment optuna clstm_spatiotemporal_cls"
-python run.py -m hparams_search=greecefire_optuna experiment=clstm_spatiotemporal_cls
+python run.py -m hparams_search=greecefire_optuna experiment=clstm_spatiotemporal_cls >> optuna_runs_clstm.log
