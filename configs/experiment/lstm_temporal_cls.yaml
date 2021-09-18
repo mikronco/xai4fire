@@ -35,4 +35,4 @@ datamodule:
   nan_fill: -1.0
 
 trainer:
-  max_epochs: 50
+  max_epochs: 20

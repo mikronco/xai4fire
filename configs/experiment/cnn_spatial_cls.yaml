@@ -23,6 +23,7 @@ model:
   lr_scheduler_step: 100
   lr_scheduler_gamma: 0.1
   weight_decay: 0.005
+  hidden_size: 16
 
 datamodule:
   batch_size: 128
@@ -31,4 +32,4 @@ datamodule:
   nan_fill: -1.0
 
 trainer:
-  max_epochs: 50
+  max_epochs: 20
