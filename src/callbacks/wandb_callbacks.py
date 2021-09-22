@@ -1,6 +1,7 @@
 import glob
 import os
 from typing import List
+from torch.utils.data import DataLoader
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sn
@@ -178,9 +179,9 @@ class LogF1PrecRecHeatmap(Callback):
 
             preds = torch.cat(self.preds).cpu().numpy()
             targets = torch.cat(self.targets).cpu().numpy()
-            f1 = f1_score(preds, targets, average=None)
-            r = recall_score(preds, targets, average=None)
-            p = precision_score(preds, targets, average=None)
+            f1 = f1_score(targets, preds, average=None)
+            r = recall_score(targets, preds, average=None)
+            p = precision_score(targets, preds, average=None)
             data = [f1, p, r]
 
             # set figure size
@@ -261,27 +262,26 @@ class LogMapPredictions(Callback):
         https://wandb.ai/wandb/wandb-lightning/reports/Image-Classification-using-PyTorch-Lightning--VmlldzoyODk1NzY
     """
 
-    def __init__(self, day: int, access_mode: str, dynamic_features: list, static_features: list, batch_size: int,
+    def __init__(self, days: list, access_mode: str, dynamic_features: list, static_features: list, batch_size: int,
                  num_workers: int, nan_fill: float, override_whole: bool):
         super().__init__()
-        lag, patch_size = (0, 0)
-        if access_mode == 'temporal':
-            lag, patch_size = (10, 0)
-        if access_mode == 'spatial':
-            lag, patch_size = (0, 25)
-        if access_mode == 'spatiotemporal':
-            lag, patch_size = (10, 25)
+        self.lag, self.patch_size = (0, 0)
         self.access_mode = access_mode
-        self.day = day
-        self.dataset = FireDatasetWholeDay(day, access_mode, patch_size, lag, dynamic_features, static_features,
-                                           nan_fill, override_whole)
-        self.len_x = self.dataset.len_x
-        self.len_y = self.dataset.len_y
-        from torch.utils.data import DataLoader
-        self.num_iterations = max(1, len(self.dataset)//batch_size)
+        self.dynamic_features = dynamic_features
+        self.static_features = static_features
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.nan_fill = nan_fill
+        self.override_whole = override_whole
+        if access_mode == 'temporal':
+            self.lag, self.patch_size = (10, 0)
+        if access_mode == 'spatial':
+            self.lag, self.patch_size = (0, 25)
+        if access_mode == 'spatiotemporal':
+            self.lag, self.patch_size = (10, 25)
+        self.days = days
 
-        self.dataloader = DataLoader(self.dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers,
-                                     pin_memory=True)
+
 
         self.ready = True
         self.override_whole = override_whole
@@ -301,46 +301,59 @@ class LogMapPredictions(Callback):
             experiment = logger.experiment
             print("LogMapPredictionsCNN callback")
 
-            print(self.day)
-            # get a validation batch from the validation dat loader
-            outputs = []
-            for i, (dynamic, static) in tqdm(enumerate(self.dataloader), total=self.num_iterations):
-                if self.override_whole:
-                    dynamic = dynamic.float()
-                    static = static.float()
-                    inputs = torch.cat([dynamic, static], dim=1)
-                    logits = pl_module(inputs.cuda()).squeeze()
-                    preds_proba = torch.exp(logits[1])
-                    im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
-                    # Log the plot
-                    experiment.log({"Fire Danger Map": im})
-                    return
-                if self.access_mode == 'spatial':
-                    dynamic = dynamic.float()
-                    static = static.float()
-                    inputs = torch.cat([dynamic, static], dim=1)
-                if self.access_mode == 'temporal':
-                    bsize, timesteps, _ = dynamic.shape
-                    static = static.unsqueeze(dim=1)
-                    repeat_list = [1 for _ in range(static.dim())]
-                    repeat_list[1] = timesteps
-                    static = static.repeat(repeat_list)
-                    inputs = torch.cat([dynamic, static], dim=2).float()
-                if self.access_mode == 'spatiotemporal':
-                    bsize, timesteps, _, _, _ = dynamic.shape
-                    static = static.unsqueeze(dim=1)
-                    repeat_list = [1 for _ in range(static.dim())]
-                    repeat_list[1] = timesteps
-                    static = static.repeat(repeat_list)
-                    inputs = torch.cat([dynamic, static], dim=2).float()
-                inputs = inputs.cuda()
-                logits = pl_module(inputs)
-                preds_proba = torch.exp(logits)[:, 1]
-                outputs.append(preds_proba.detach().cpu())
+            for day in self.days:
+                day = int(day)
+                print(day)
+                # get a validation batch from the validation dat loader
+                outputs = []
+                dataset = FireDatasetWholeDay(day, self.access_mode, self.patch_size, self.lag, self.dynamic_features,
+                                              self.static_features,
+                                              self.nan_fill, self.override_whole)
+                len_x = dataset.len_x
+                len_y = dataset.len_y
+                self.num_iterations = max(1, len(dataset) // self.batch_size)
+                dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=False,
+                                        num_workers=self.num_workers,
+                                        pin_memory=True)
+                for i, (dynamic, static) in tqdm(enumerate(dataloader), total=self.num_iterations):
+                    if self.override_whole:
+                        dynamic = dynamic.float()
+                        static = static.float()
+                        inputs = torch.cat([dynamic, static], dim=1)
+                        logits = pl_module(inputs.cuda()).squeeze()
+                        preds_proba = torch.exp(logits[1])
+                        im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
+                        # Log the plot
+                        experiment.log({"Fire Danger Map": im})
+                        return
+                    if self.access_mode == 'spatial':
+                        dynamic = dynamic.float()
+                        static = static.float()
+                        inputs = torch.cat([dynamic, static], dim=1)
+                    if self.access_mode == 'temporal':
+                        bsize, timesteps, _ = dynamic.shape
+                        static = static.unsqueeze(dim=1)
+                        repeat_list = [1 for _ in range(static.dim())]
+                        repeat_list[1] = timesteps
+                        static = static.repeat(repeat_list)
+                        inputs = torch.cat([dynamic, static], dim=2).float()
+                    if self.access_mode == 'spatiotemporal':
+                        bsize, timesteps, _, _, _ = dynamic.shape
+                        static = static.unsqueeze(dim=1)
+                        repeat_list = [1 for _ in range(static.dim())]
+                        repeat_list[1] = timesteps
+                        static = static.repeat(repeat_list)
+                        inputs = torch.cat([dynamic, static], dim=2).float()
+                    inputs = inputs.cuda()
+                    logits = pl_module(inputs)
+                    preds_proba = torch.exp(logits)[:, 1]
+                    outputs.append(preds_proba.detach().cpu())
 
-            outputs = torch.cat(outputs, dim=0)
-            outputs = torch.tensor(outputs)
-            outputs = outputs.reshape(self.len_y, self.len_x)
-            im = plt.imshow(outputs.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
-            # Log the plot
-            experiment.log({"Fire Danger Map": im})
+                outputs = torch.cat(outputs, dim=0)
+                outputs = torch.tensor(outputs)
+                outputs = outputs.reshape(len_y, len_x)
+                im = plt.imshow(outputs.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
+                plt.axis('off')
+                plt.tight_layout()
+                # Log the plot
+                experiment.log({f"Fire Danger Map {day}": im})
