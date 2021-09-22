@@ -101,9 +101,11 @@ class FireDS(Dataset):
         else:
             dates = pd.DatetimeIndex(self.ds.isel(time=0).time_.values)
 
-        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([2019, 2020]))[0]))
-        self.val_ds = self.ds.isel(patch=list(np.where(dates.year == 2019)[0]))
-        self.test_ds = self.ds.isel(patch=list(np.where(dates.year == 2020)[0]))
+        val_year = 2020
+        test_year = 2020
+        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([test_year]))[0]))
+        self.val_ds = self.ds.isel(patch=list(np.where(dates.year == val_year)[0]))
+        self.test_ds = self.ds.isel(patch=list(np.where(dates.year == test_year)[0]))
 
         if train_val_test == 'train':
             self.ds = self.train_ds
@@ -204,8 +206,35 @@ class FireDatasetWholeDay(Dataset):
         mean_ds_path = ds_paths[access_mode]
         self.mean_ds = xr.open_dataset(mean_ds_path).load()
         self.ds = self.ds.load()
-        self.len_x = ds.dims['x'] - patch_size
-        self.len_y = ds.dims['y'] - patch_size
+        pixel_range = patch_size // 2
+        self.pixel_range = pixel_range
+        self.len_x = self.ds.dims['x']
+        self.len_y = self.ds.dims['y']
+        if access_mode == 'spatiotemporal':
+            new_ds_dims = ['time', 'y', 'x']
+            new_ds_dict = {}
+            for feat in dynamic_features:
+                new_ds_dict[feat] = (new_ds_dims,
+                                     np.pad(self.ds[feat].values,
+                                            pad_width=((0, 0), (pixel_range, pixel_range), (pixel_range, pixel_range)),
+                                            mode='constant', constant_values=(0, 0)))
+            new_ds_dims_static = ['y', 'x']
+            for feat in static_features:
+                new_ds_dict[feat] = (new_ds_dims_static,
+                                     np.pad(self.ds[feat].values,
+                                            pad_width=((pixel_range, pixel_range), (pixel_range, pixel_range)),
+                                            mode='constant', constant_values=(0, 0)))
+                self.ds = xr.Dataset(new_ds_dict)
+
+        elif access_mode == 'spatial':
+            new_ds_dims = ['y', 'x']
+            new_ds_dict = {}
+            for feat in dynamic_features + static_features:
+                new_ds_dict[feat] = (new_ds_dims,
+                                     np.pad(self.ds[feat].values,
+                                            pad_width=((pixel_range, pixel_range), (pixel_range, pixel_range)),
+                                            mode='constant', constant_values=(0, 0)))
+            self.ds = xr.Dataset(new_ds_dict)
         self.patch_size = patch_size
         self.lag = lag
         self.access_mode = access_mode
@@ -220,14 +249,14 @@ class FireDatasetWholeDay(Dataset):
         return self.len_x * self.len_y
 
     def __getitem__(self, idx):
-        y = idx // self.len_x
-        x = idx % self.len_x
+        y = idx // self.len_x + self.pixel_range
+        x = idx % self.len_x + self.pixel_range
         if self.lag == 0:
             day = 0
         else:
             day = self.lag - 1
-        dynamic, static = get_pixel_feature_vector(self.ds, self.mean_ds, day, x + self.patch_size // 2,
-                                                   y + self.patch_size // 2, self.access_mode, self.patch_size,
+        dynamic, static = get_pixel_feature_vector(self.ds, self.mean_ds, day, x,
+                                                   y, self.access_mode, self.patch_size,
                                                    self.lag,
                                                    self.dynamic_features,
                                                    self.static_features,
