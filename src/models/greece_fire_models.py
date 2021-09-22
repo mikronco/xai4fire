@@ -145,7 +145,7 @@ class ConvLSTM_fire_model(LightningModule):
         )
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.hparams.lr_scheduler_step,
                                                        gamma=self.hparams.lr_scheduler_gamma)
-        return {'optimizer': optimizer}
+        return {'optimizer': optimizer, 'lr_scheduler': lr_scheduler}
 
 
 class LSTM_fire_model(LightningModule):
