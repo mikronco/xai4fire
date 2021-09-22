@@ -30,7 +30,7 @@ class ConvLSTM_fire_model(LightningModule):
             hidden_size: int = 32,
             lstm_layers: int = 1,
             lr: float = 0.001,
-            positive_weight: float = 0.8,
+            positive_weight: float = 0.5,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005):
@@ -40,9 +40,10 @@ class ConvLSTM_fire_model(LightningModule):
         self.save_hyperparameters()
 
         self.model = SimpleConvLSTM(hparams=self.hparams)
+        # self.model = SK_CLSTM(hparams=self.hparams)
 
         # loss function
-        self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1 - positive_weight, positive_weight]))
+        self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1. - positive_weight, positive_weight]))
         # use separate metric instance for train, val and test step
         # to ensure a proper reduction over the epoch
 
@@ -144,7 +145,7 @@ class ConvLSTM_fire_model(LightningModule):
         )
         lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=self.hparams.lr_scheduler_step,
                                                        gamma=self.hparams.lr_scheduler_gamma)
-        return {'optimizer': optimizer, 'lr_scheduler': lr_scheduler}
+        return {'optimizer': optimizer}
 
 
 class LSTM_fire_model(LightningModule):
@@ -167,7 +168,7 @@ class LSTM_fire_model(LightningModule):
             hidden_size: int = 32,
             lstm_layers: int = 3,
             lr: float = 0.001,
-            positive_weight: float = 0.8,
+            positive_weight: float = 0.5,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005,
@@ -308,7 +309,7 @@ class UnetCNN_fire_model(LightningModule):
             self,
             dynamic_features=None,
             static_features=None,
-            positive_weight: float = 0.8,
+            positive_weight: float = 0.5,
             lr: float = 0.001,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
