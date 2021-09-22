@@ -46,10 +46,15 @@ seed: 42
 
 sel_dynamic_features: [
     'Fpar_500m',
+    'Lai_500m',
     'LST_Day_1km',
     'LST_Night_1km',
     '1 km 16 days NDVI',
-    'ET_500m',
+    '1 km 16 days EVI',
+    # 'ET_500m',
+    # 'LE_500m',
+    # 'PET_500m',
+    # 'PLE_500m',
     'era5_max_u10',
     'era5_max_v10',
     'era5_max_t2m',

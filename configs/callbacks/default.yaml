@@ -22,7 +22,7 @@ log_f1_precision_recall_heatmap:
 log_confusion_matrix:
   _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
 
-#
+
 #log_map_predictions:
 #  _target_: src.callbacks.wandb_callbacks.LogMapPredictions
 #  dynamic_features: ${sel_dynamic_features}
@@ -31,6 +31,6 @@ log_confusion_matrix:
 #  nan_fill: ${datamodule.nan_fill}
 #  batch_size: ${datamodule.batch_size}
 #  num_workers: ${datamodule.num_workers}
-#  day: 4155
+#  days: [4150, 4155, 4240]
 #  override_whole: False
 
