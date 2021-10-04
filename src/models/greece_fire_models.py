@@ -48,17 +48,31 @@ class ConvLSTM_fire_model(LightningModule):
         # to ensure a proper reduction over the epoch
 
         # Accuracy, AUROC, AUC, ConfusionMatrix
-        self.train_accuracy = Accuracy()
-        self.train_auc = AUROC(pos_label=1)
-        self.train_auprc = AveragePrecision()
+        phases = ['train', 'test', 'val']
+        logit_metrics = {'acc': Accuracy}
+        proba_metrics = {'auroc': AUROC, 'auprc': AveragePrecision}
 
-        self.val_accuracy = Accuracy()
-        self.val_auc = AUROC(pos_label=1)
-        self.val_auprc = AveragePrecision()
+        self.logit_metrics_dict = {}
+        for phase in phases:
+            self.logit_metrics_dict[phase] = {}
+            for name, metric in logit_metrics.items():
+                self.logit_metrics_dict[phase][name] = metric()
 
-        self.test_accuracy = Accuracy()
-        self.test_auc = AUROC(pos_label=1)
-        self.test_auprc = AveragePrecision()
+        self.proba_metrics_dict = {}
+        for phase in phases:
+            self.proba_metrics_dict[phase] = {}
+            for name, metric in proba_metrics.items():
+                self.proba_metrics_dict[phase][name] = metric()
+
+    def _log_step(self, phase, loss, preds, preds_proba, targets):
+        for metric_name, metric_fn in self.logit_metrics_dict[phase].items():
+            value = metric_fn(preds, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+
+        for metric_name, metric_fn in self.proba_metrics_dict[phase].items():
+            value = metric_fn(preds_proba, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -80,17 +94,8 @@ class ConvLSTM_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
-
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'train'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -102,17 +107,8 @@ class ConvLSTM_fire_model(LightningModule):
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log val metrics
-        acc = self.val_accuracy(preds, targets)
-        auc = self.val_auc(preds_proba, targets)
-        auprc = self.val_auprc(preds_proba, targets)
-
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'val'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -120,26 +116,14 @@ class ConvLSTM_fire_model(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log test metrics
-        acc = self.test_accuracy(preds, targets)
-        auc = self.test_auc(preds_proba, targets)
-        auprc = self.test_auprc(preds_proba, targets)
-
-        self.log("test/loss", loss, on_step=False, on_epoch=True)
-        self.log("test/acc", acc, on_step=False, on_epoch=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
-
+        phase = 'test'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
         pass
 
     def configure_optimizers(self):
-        """
-        See https://pytorch-lightning.readthedocs.io/en/latest/common/lightning_module.html#configure-optimizers
-        """
         optimizer = torch.optim.Adam(
             params=self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay
         )
@@ -190,17 +174,31 @@ class LSTM_fire_model(LightningModule):
         # to ensure a proper reduction over the epoch
 
         # Accuracy, AUROC, AUC, ConfusionMatrix
-        self.train_accuracy = Accuracy()
-        self.train_auc = AUROC(pos_label=1)
-        self.train_auprc = AveragePrecision()
+        phases = ['train', 'test', 'val']
+        logit_metrics = {'acc': Accuracy}
+        proba_metrics = {'auroc': AUROC, 'auprc': AveragePrecision}
 
-        self.val_accuracy = Accuracy()
-        self.val_auc = AUROC(pos_label=1)
-        self.val_auprc = AveragePrecision()
+        self.logit_metrics_dict = {}
+        for phase in phases:
+            self.logit_metrics_dict[phase] = {}
+            for name, metric in logit_metrics.items():
+                self.logit_metrics_dict[phase][name] = metric()
 
-        self.test_accuracy = Accuracy()
-        self.test_auc = AUROC(pos_label=1)
-        self.test_auprc = AveragePrecision()
+        self.proba_metrics_dict = {}
+        for phase in phases:
+            self.proba_metrics_dict[phase] = {}
+            for name, metric in proba_metrics.items():
+                self.proba_metrics_dict[phase][name] = metric()
+
+    def _log_step(self, phase, loss, preds, preds_proba, targets):
+        for metric_name, metric_fn in self.logit_metrics_dict[phase].items():
+            value = metric_fn(preds, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+
+        for metric_name, metric_fn in self.proba_metrics_dict[phase].items():
+            value = metric_fn(preds_proba, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -224,17 +222,8 @@ class LSTM_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
-
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'train'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -246,17 +235,8 @@ class LSTM_fire_model(LightningModule):
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log val metrics
-        acc = self.val_accuracy(preds, targets)
-        auc = self.val_auc(preds_proba, targets)
-        auprc = self.val_auprc(preds_proba, targets)
-
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'val'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -264,17 +244,8 @@ class LSTM_fire_model(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log test metrics
-        acc = self.test_accuracy(preds, targets)
-        auc = self.test_auc(preds_proba, targets)
-        auprc = self.test_auprc(preds_proba, targets)
-
-        self.log("test/loss", loss, on_step=False, on_epoch=True)
-        self.log("test/acc", acc, on_step=False, on_epoch=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
-
+        phase = 'test'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -331,17 +302,31 @@ class UnetCNN_fire_model(LightningModule):
         # to ensure a proper reduction over the epoch
 
         # Accuracy, AUROC, AUC, ConfusionMatrix
-        self.train_accuracy = Accuracy()
-        self.train_auc = AUROC(pos_label=1)
-        self.train_auprc = AveragePrecision()
+        phases = ['train', 'test', 'val']
+        logit_metrics = {'acc': Accuracy}
+        proba_metrics = {'auroc': AUROC, 'auprc': AveragePrecision}
 
-        self.val_accuracy = Accuracy()
-        self.val_auc = AUROC(pos_label=1)
-        self.val_auprc = AveragePrecision()
+        self.logit_metrics_dict = {}
+        for phase in phases:
+            self.logit_metrics_dict[phase] = {}
+            for name, metric in logit_metrics.items():
+                self.logit_metrics_dict[phase][name] = metric()
 
-        self.test_accuracy = Accuracy()
-        self.test_auc = AUROC(pos_label=1)
-        self.test_auprc = AveragePrecision()
+        self.proba_metrics_dict = {}
+        for phase in phases:
+            self.proba_metrics_dict[phase] = {}
+            for name, metric in proba_metrics.items():
+                self.proba_metrics_dict[phase][name] = metric()
+
+    def _log_step(self, phase, loss, preds, preds_proba, targets):
+        for metric_name, metric_fn in self.logit_metrics_dict[phase].items():
+            value = metric_fn(preds, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+
+        for metric_name, metric_fn in self.proba_metrics_dict[phase].items():
+            value = metric_fn(preds_proba, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -359,17 +344,8 @@ class UnetCNN_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
-
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'train'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -381,17 +357,8 @@ class UnetCNN_fire_model(LightningModule):
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log val metrics
-        acc = self.val_accuracy(preds, targets)
-        auc = self.val_auc(preds_proba, targets)
-        auprc = self.val_auprc(preds_proba, targets)
-
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'val'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -399,17 +366,8 @@ class UnetCNN_fire_model(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log test metrics
-        acc = self.test_accuracy(preds, targets)
-        auc = self.test_auc(preds_proba, targets)
-        auprc = self.test_auprc(preds_proba, targets)
-
-        self.log("test/loss", loss, on_step=False, on_epoch=True)
-        self.log("test/acc", acc, on_step=False, on_epoch=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
-
+        phase = 'test'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -467,17 +425,31 @@ class CNN_fire_model(LightningModule):
         # to ensure a proper reduction over the epoch
 
         # Accuracy, AUROC, AUC, ConfusionMatrix
-        self.train_accuracy = Accuracy()
-        self.train_auc = AUROC(pos_label=1)
-        self.train_auprc = AveragePrecision()
+        phases = ['train', 'test', 'val']
+        logit_metrics = {'acc': Accuracy}
+        proba_metrics = {'auroc': AUROC, 'auprc': AveragePrecision}
 
-        self.val_accuracy = Accuracy()
-        self.val_auc = AUROC(pos_label=1)
-        self.val_auprc = AveragePrecision()
+        self.logit_metrics_dict = {}
+        for phase in phases:
+            self.logit_metrics_dict[phase] = {}
+            for name, metric in logit_metrics.items():
+                self.logit_metrics_dict[phase][name] = metric()
 
-        self.test_accuracy = Accuracy()
-        self.test_auc = AUROC(pos_label=1)
-        self.test_auprc = AveragePrecision()
+        self.proba_metrics_dict = {}
+        for phase in phases:
+            self.proba_metrics_dict[phase] = {}
+            for name, metric in proba_metrics.items():
+                self.proba_metrics_dict[phase][name] = metric()
+
+    def _log_step(self, phase, loss, preds, preds_proba, targets):
+        for metric_name, metric_fn in self.logit_metrics_dict[phase].items():
+            value = metric_fn(preds, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+
+        for metric_name, metric_fn in self.proba_metrics_dict[phase].items():
+            value = metric_fn(preds_proba, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -495,17 +467,8 @@ class CNN_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
-
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'train'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -517,17 +480,8 @@ class CNN_fire_model(LightningModule):
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log val metrics
-        acc = self.val_accuracy(preds, targets)
-        auc = self.val_auc(preds_proba, targets)
-        auprc = self.val_auprc(preds_proba, targets)
-
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'val'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -535,17 +489,8 @@ class CNN_fire_model(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log test metrics
-        acc = self.test_accuracy(preds, targets)
-        auc = self.test_auc(preds_proba, targets)
-        auprc = self.test_auprc(preds_proba, targets)
-
-        self.log("test/loss", loss, on_step=False, on_epoch=True)
-        self.log("test/acc", acc, on_step=False, on_epoch=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
-
+        phase = 'test'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -602,17 +547,31 @@ class FCN_fire_model(LightningModule):
         # to ensure a proper reduction over the epoch
 
         # Accuracy, AUROC, AUC, ConfusionMatrix
-        self.train_accuracy = Accuracy()
-        self.train_auc = AUROC(pos_label=1)
-        self.train_auprc = AveragePrecision()
+        phases = ['train', 'test', 'val']
+        logit_metrics = {'acc': Accuracy}
+        proba_metrics = {'auroc': AUROC, 'auprc': AveragePrecision}
 
-        self.val_accuracy = Accuracy()
-        self.val_auc = AUROC(pos_label=1)
-        self.val_auprc = AveragePrecision()
+        self.logit_metrics_dict = {}
+        for phase in phases:
+            self.logit_metrics[phase] = {}
+            for name, metric in logit_metrics.items():
+                self.logit_metrics_dict[phase][name] = metric()
 
-        self.test_accuracy = Accuracy()
-        self.test_auc = AUROC(pos_label=1)
-        self.test_auprc = AveragePrecision()
+        self.proba_metrics_dict = {}
+        for phase in phases:
+            self.proba_metrics_dict[phase] = {}
+            for name, metric in proba_metrics.items():
+                self.proba_metrics_dict[phase][name] = metric()
+
+    def _log_step(self, phase, loss, preds, preds_proba, targets):
+        for metric_name, metric_fn in self.logit_metrics_dict[phase].items():
+            value = metric_fn(preds, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+
+        for metric_name, metric_fn in self.proba_metrics_dict[phase].items():
+            value = metric_fn(preds_proba, targets)
+            self.log(f'{phase}/{metric_name}', value, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(f"{phase}/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
 
     def forward(self, x: torch.Tensor):
         return self.model(x)
@@ -630,17 +589,8 @@ class FCN_fire_model(LightningModule):
 
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
-
-        self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'train'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         # we can return here dict with any tensors
         # and then read it in some callback or in training_epoch_end() below
         # remember to always return loss from training_step, or else backpropagation will fail!
@@ -652,17 +602,8 @@ class FCN_fire_model(LightningModule):
 
     def validation_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log val metrics
-        acc = self.val_accuracy(preds, targets)
-        auc = self.val_auc(preds_proba, targets)
-        auprc = self.val_auprc(preds_proba, targets)
-
-        self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
-
+        phase = 'val'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -670,17 +611,8 @@ class FCN_fire_model(LightningModule):
 
     def test_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
-
-        # log test metrics
-        acc = self.test_accuracy(preds, targets)
-        auc = self.test_auc(preds_proba, targets)
-        auprc = self.test_auprc(preds_proba, targets)
-
-        self.log("test/loss", loss, on_step=False, on_epoch=True)
-        self.log("test/acc", acc, on_step=False, on_epoch=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True)
-
+        phase = 'test'
+        self._log_step(phase, loss, preds, preds_proba, targets)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
