@@ -295,7 +295,8 @@ class LogMapPredictions(Callback):
 
     def on_train_end(self, trainer, pl_module):
         if self.ready:
-            torch.cuda.empty_cache()
+            if pl_module.on_gpu:
+                torch.cuda.empty_cache()
             pl_module.eval()
             logger = get_wandb_logger(trainer=trainer)
             experiment = logger.experiment
@@ -320,7 +321,9 @@ class LogMapPredictions(Callback):
                         dynamic = dynamic.float()
                         static = static.float()
                         inputs = torch.cat([dynamic, static], dim=1)
-                        logits = pl_module(inputs.cuda()).squeeze()
+                        if pl_module.on_gpu:
+                            inputs = inputs.cuda()
+                            logits = pl_module(inputs).squeeze()
                         preds_proba = torch.exp(logits[1])
                         im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
                         # Log the plot
@@ -344,7 +347,8 @@ class LogMapPredictions(Callback):
                         repeat_list[1] = timesteps
                         static = static.repeat(repeat_list)
                         inputs = torch.cat([dynamic, static], dim=2).float()
-                    inputs = inputs.cuda()
+                    if pl_module.on_gpu:
+                        inputs = inputs.cuda()
                     logits = pl_module(inputs)
                     preds_proba = torch.exp(logits)[:, 1]
                     outputs.append(preds_proba.detach().cpu())

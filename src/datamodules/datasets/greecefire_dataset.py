@@ -103,7 +103,7 @@ class FireDS(Dataset):
 
         val_year = 2020
         test_year = 2020
-        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([test_year]))[0]))
+        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([val_year, test_year]))[0]))
         self.val_ds = self.ds.isel(patch=list(np.where(dates.year == val_year)[0]))
         self.test_ds = self.ds.isel(patch=list(np.where(dates.year == test_year)[0]))
 
@@ -147,27 +147,13 @@ def get_pixel_feature_ds(the_ds, t=0, x=0, y=0, access_mode='temporal', patch_si
     #     len_y = ds.dims['y'] - patch_size
     if access_mode == 'spatiotemporal':
         block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=slice(x - patch_half, x + patch_half + 1),
-                            y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y', 'time'])
+                            y=slice(y - patch_half, y + patch_half + 1))#.reset_index(['x', 'y', 'time'])
     elif access_mode == 'temporal':
         block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
     elif access_mode == 'spatial':
         block = the_ds.isel(x=slice(x - patch_half, x + patch_half + 1),
-                            y=slice(y - patch_half, y + patch_half + 1)).reset_index(['x', 'y'])
-    if access_mode == 'spatial':
-        year = pd.DatetimeIndex([the_ds['time'].values]).year[0]
-    else:
-        year = pd.DatetimeIndex([the_ds['time'][t].values]).year[0]
+                            y=slice(y - patch_half, y + patch_half + 1))#.reset_index(['x', 'y'])
 
-    # clc
-    if year < 2012:
-        block['clc'] = block['clc_2006']
-    elif year < 2018:
-        block['clc'] = block['clc_2012']
-    else:
-        block['clc'] = block['clc_2018']
-
-    # population density
-    block['population_density'] = block[f'population_density_{year}']
     return block
 
 
@@ -178,6 +164,7 @@ def get_pixel_feature_vector(the_ds, mean_ds, t=0, x=0, y=0, access_mode='tempor
         chunk = the_ds
     else:
         chunk = get_pixel_feature_ds(the_ds, t=t, x=x, y=y, access_mode=access_mode, patch_size=patch_size, lag=lag)
+
     dynamic = np.stack([norm_ds(chunk, mean_ds, feature) for feature in dynamic_features])
     if 'temp' in access_mode:
         dynamic = np.moveaxis(dynamic, 0, 1)
@@ -199,32 +186,55 @@ class FireDatasetWholeDay(Dataset):
                 on a sample.
         """
         if lag > 0:
-            self.ds = ds.isel(time=range(day - lag + 1, day + 1)).load()
+            self.ds = ds.isel(time=range(day - lag + 1, day + 1))
         else:
-            self.ds = ds.isel(time=day).load()
+            self.ds = ds.isel(time=day)
         self.override_whole = override_whole
         mean_ds_path = ds_paths[access_mode]
-        self.mean_ds = xr.open_dataset(mean_ds_path).load()
-        self.ds = self.ds.load()
+        self.mean_ds = xr.open_dataset(mean_ds_path)
+        print(self.ds)
+        # self.ds = self.ds.load()
+        print("Dataset loaded...")
         pixel_range = patch_size // 2
         self.pixel_range = pixel_range
         self.len_x = self.ds.dims['x']
         self.len_y = self.ds.dims['y']
+        if access_mode == 'spatial':
+            year = pd.DatetimeIndex([self.ds['time'].values]).year[0]
+        else:
+            year = pd.DatetimeIndex([self.ds['time'][0].values]).year[0]
+        # clc
+        if 'clc' in static_features:
+            if year < 2012:
+                self.ds['clc'] = self.ds['clc_2006']
+            elif year < 2018:
+                self.ds['clc'] = self.ds['clc_2012']
+            else:
+                self.ds['clc'] = self.ds['clc_2018']
+
+        # population density
+        if 'population_density' in static_features:
+            self.ds['population_density'] = self.ds[f'population_density_{year}']
+
         if access_mode == 'spatiotemporal':
             new_ds_dims = ['time', 'y', 'x']
             new_ds_dict = {}
+            print("Padding dynamic features...")
+
             for feat in dynamic_features:
                 new_ds_dict[feat] = (new_ds_dims,
                                      np.pad(self.ds[feat].values,
                                             pad_width=((0, 0), (pixel_range, pixel_range), (pixel_range, pixel_range)),
                                             mode='constant', constant_values=(0, 0)))
             new_ds_dims_static = ['y', 'x']
+            print("Padding static features...")
+
             for feat in static_features:
                 new_ds_dict[feat] = (new_ds_dims_static,
                                      np.pad(self.ds[feat].values,
                                             pad_width=((pixel_range, pixel_range), (pixel_range, pixel_range)),
                                             mode='constant', constant_values=(0, 0)))
-                self.ds = xr.Dataset(new_ds_dict)
+            self.ds = xr.Dataset(new_ds_dict)
 
         elif access_mode == 'spatial':
             new_ds_dims = ['y', 'x']
@@ -234,7 +244,9 @@ class FireDatasetWholeDay(Dataset):
                                      np.pad(self.ds[feat].values,
                                             pad_width=((pixel_range, pixel_range), (pixel_range, pixel_range)),
                                             mode='constant', constant_values=(0, 0)))
+            new_ds_dict['time'] = self.ds['time'].values
             self.ds = xr.Dataset(new_ds_dict)
+
         self.patch_size = patch_size
         self.lag = lag
         self.access_mode = access_mode
