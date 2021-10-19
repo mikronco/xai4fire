@@ -1,0 +1,36 @@
+# @package _global_
+
+# to execute this experiment run:
+# python run.py experiment=cnn_spatial_cls
+
+defaults:
+  - override /trainer: default.yaml # choose trainer from 'configs/trainer/'
+  - override /model: greecefire_UNET_model.yaml
+  - override /datamodule: fireds_spatial_datamodule.yaml
+  - override /callbacks: default.yaml
+  - override /logger: wandb.yaml
+
+# all parameters below will be merged with parameters from default configurations set above
+# this allows you to overwrite only specified parameters
+
+logger:
+  wandb:
+    name: ${oc.env:WANDB_NAME_PREFIX}_unet_seg_${now:%Y%m%d_%H%M}
+
+model:
+  positive_weight: 0.995
+  lr: 0.01
+  lr_scheduler_step: 25
+  lr_scheduler_gamma: 0.2
+  weight_decay: 0.005
+  hidden_size: 16
+
+datamodule:
+  batch_size: 128
+  num_workers: 16
+  pin_memory: False
+  nan_fill: -1.0
+  problem_class: "segmentation"
+
+trainer:
+  max_epochs: 10

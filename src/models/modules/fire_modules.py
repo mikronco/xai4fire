@@ -38,6 +38,25 @@ from torchvision.models.resnet import resnet18
 from fastai.vision.models import unet
 
 
+class SE_Block(nn.Module):
+    "credits: https://github.com/moskomule/senet.pytorch/blob/master/senet/se_module.py#L4"
+    def __init__(self, c, r=1):
+        super().__init__()
+        self.squeeze = nn.AdaptiveAvgPool2d(1)
+        self.excitation = nn.Sequential(
+            nn.Linear(c, c // r, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(c // r, c, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        bs, c, _, _ = x.shape
+        y = self.squeeze(x).view(bs, c)
+        y = self.excitation(y).view(bs, c, 1, 1)
+        return x * y.expand_as(x)
+
+
 class SimpleConvLSTM(nn.Module):
     def __init__(self, hparams: dict):
         super().__init__()
@@ -67,9 +86,12 @@ class SimpleConvLSTM(nn.Module):
         # fully-connected part
 
         kernel_size = 3
+        self.se1 = SE_Block(hidden_size, r=4)
         self.conv1 = nn.Conv2d(hidden_size, hidden_size, kernel_size=kernel_size, stride=1, padding=1)
+        self.se2 = SE_Block(hidden_size, r=4)
         self.drop1 = nn.Dropout(0.5)
-        self.fc1 = nn.Linear(kernel_size * kernel_size * hidden_size * 16, 16)
+        # self.fc1 = nn.Linear(kernel_size * kernel_size * hidden_size * 16, 16)
+        self.fc1 = nn.Linear(10000, 16)
         self.drop2 = nn.Dropout(0.5)
         self.fc2 = nn.Linear(16, 8)
         self.drop3 = nn.Dropout(0.5)
@@ -78,8 +100,11 @@ class SimpleConvLSTM(nn.Module):
     def forward(self, x: torch.Tensor):
         _, last_states = self.convlstm(x)
         x = last_states[0][0]
-        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+        x = self.se1(x)
+        x = F.relu(self.conv1(x))
+        x = self.se2(x)
         x = torch.flatten(x, 1)
+        print(x.shape)
         x = F.relu(self.drop1(self.fc1(x)))
         x = F.relu(self.drop1(self.fc2(x)))
         x = self.fc3(x)
@@ -243,7 +268,6 @@ class SK_CLSTM(nn.Module):
         return torch.nn.functional.log_softmax(x, dim=1)
 
 
-
 class SK_LSTM(nn.Module):
     def __init__(self, hparams: dict):
         super().__init__()
@@ -254,9 +278,9 @@ class SK_LSTM(nn.Module):
         self.fc1 = torch.nn.Linear(hidden_size, hidden_size)
         self.drop1 = torch.nn.Dropout(0.5)
         self.relu = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(hidden_size, hidden_size//2)
+        self.fc2 = torch.nn.Linear(hidden_size, hidden_size // 2)
         self.drop2 = torch.nn.Dropout(0.5)
-        self.fc3 = torch.nn.Linear(hidden_size//2, 2)
+        self.fc3 = torch.nn.Linear(hidden_size // 2, 2)
         self.fc_nn = torch.nn.Sequential(
             self.fc1,
             self.drop1,
@@ -367,11 +391,91 @@ class DynUnet(nn.Module):
         m = resnet18()
         m = nn.Sequential(*list(m.children())[:-2])
         m[0] = nn.Conv2d(input_dim, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.net = unet.DynamicUnet(m, 1, (25, 25), norm_type=None)
+        self.net = unet.DynamicUnet(m, 2, (25, 25), norm_type=None)
 
     def forward(self, x):
         out = self.net(x)
-        return out
+        return torch.nn.functional.log_softmax(out, dim=1)
+
+
+class ConvLSTMCell(nn.Module):
+    def __init__(self, input_dim, hidden_dim, kernel_size, bias):
+        """
+        Initialize ConvLSTM cell.
+
+        Parameters
+        ----------
+        input_dim: int
+            Number of channels of input tensor.
+        hidden_dim: int
+            Number of channels of hidden state.
+        kernel_size: (int, int)
+            Size of the convolutional kernel.
+        bias: bool
+            Whether or not to add the bias.
+        """
+
+        super(ConvLSTMCell, self).__init__()
+
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+
+        self.kernel_size = kernel_size
+        self.padding = kernel_size[0] // 2, kernel_size[1] // 2
+        self.bias = bias
+
+        self.conv = nn.Conv2d(in_channels=self.input_dim + self.hidden_dim,
+                              out_channels=4 * self.hidden_dim,
+                              kernel_size=self.kernel_size,
+                              padding=self.padding,
+                              bias=self.bias)
+
+    def forward(self, input_tensor, cur_state):
+        h_cur, c_cur = cur_state
+
+        combined = torch.cat([input_tensor, h_cur], dim=1)  # concatenate along channel axis
+
+        combined_conv = self.conv(combined)
+        cc_i, cc_f, cc_o, cc_g = torch.split(combined_conv, self.hidden_dim, dim=1)
+        i = torch.sigmoid(cc_i)
+        f = torch.sigmoid(cc_f)
+        o = torch.sigmoid(cc_o)
+        g = torch.tanh(cc_g)
+
+        c_next = f * c_cur + i * g
+        h_next = o * torch.tanh(c_next)
+
+        return h_next, c_next
+
+    def init_hidden(self, batch_size, image_size):
+        height, width = image_size
+        return (torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device),
+                torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device))
+
+
+class DynConvLSTMUnet(nn.Module):
+    def __init__(self, hparams: dict):
+        super(DynUnet, self).__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        m = resnet18()
+        m = nn.Sequential(*list(m.children())[:-2])
+        m[0] = nn.Conv2d(input_dim, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.net = unet.DynamicUnet(m, 2, (25, 25), norm_type=None)
+
+        def forward(self, x):
+            out = self.net(x)
+            return torch.nn.functional.log_softmax(out, dim=1)
+
+    # self.convlstm = ConvLSTM(input_dim,
+    #                          hidden_size,
+    #                          (3, 3),
+    #                          lstm_layers,
+    #                          True,
+    #                          True,
+    #                          False)
+    #
+    # _, last_states = self.convlstm(x)
+    # x = last_states[0][0]
 
 
 class Resnet18CNN(nn.Module):
