@@ -256,6 +256,57 @@ class LogImagePredictions(Callback):
             )
 
 
+class LogValPredictions(Callback):
+    """Logs a validation batch and their predictions to wandb.
+    Example adapted from:
+        https://wandb.ai/wandb/wandb-lightning/reports/Image-Classification-using-PyTorch-Lightning--VmlldzoyODk1NzY
+    """
+
+    def __init__(self, num_samples: int = 8):
+        super().__init__()
+        self.num_samples = num_samples
+        self.ready = True
+        self.preds_proba = []
+        self.targets = []
+
+    def on_sanity_check_start(self, trainer, pl_module):
+        self.ready = False
+
+    def on_sanity_check_end(self, trainer, pl_module):
+        """Start executing this callback only after all validation sanity checks end."""
+        self.ready = True
+
+    def on_validation_batch_end(
+            self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx
+    ):
+        """Gather data from single batch."""
+        if self.ready:
+            self.preds_proba.append(outputs["preds_proba"])
+            self.targets.append(outputs["targets"])
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if self.ready:
+            logger = get_wandb_logger(trainer=trainer)
+            experiment = logger.experiment
+
+            preds_proba = torch.cat(self.preds_proba[:self.num_samples]).cpu().numpy()
+            targets = torch.cat(self.targets[:self.num_samples]).cpu().numpy()
+
+            imgs = []
+            for i in range(self.num_samples):
+                imgs.append(wandb.Image(plt.imshow(targets[i].squeeze(), cmap='Spectral_r'), caption=f'Target {i}'))
+                imgs.append(wandb.Image(plt.imshow(preds_proba[i].squeeze(), cmap='Spectral_r'), caption=f'Prediction {i}'))
+
+            # log the images as wandb Image
+            experiment.log(
+                {
+                    f"Danger Map": imgs
+                }
+            )
+            self.preds_proba.clear()
+            self.targets.clear()
+
+
 class LogMapPredictions(Callback):
     """Logs a map prediction image to wandb.
     Example adapted from:
@@ -280,8 +331,6 @@ class LogMapPredictions(Callback):
         if access_mode == 'spatiotemporal':
             self.lag, self.patch_size = (10, 25)
         self.days = days
-
-
 
         self.ready = True
         self.override_whole = override_whole
@@ -327,8 +376,8 @@ class LogMapPredictions(Callback):
                         preds_proba = torch.exp(logits[1])
                         im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
                         # Log the plot
-                        experiment.log({"Fire Danger Map": im})
-                        return
+                        experiment.log({f"Daily Danger Map {day}": im})
+                        continue
                     if self.access_mode == 'spatial':
                         dynamic = dynamic.float()
                         static = static.float()
@@ -352,7 +401,8 @@ class LogMapPredictions(Callback):
                     logits = pl_module(inputs)
                     preds_proba = torch.exp(logits)[:, 1]
                     outputs.append(preds_proba.detach().cpu())
-
+                if self.override_whole:
+                    continue
                 outputs = torch.cat(outputs, dim=0)
                 outputs = torch.tensor(outputs)
                 outputs = outputs.reshape(len_y, len_x)
