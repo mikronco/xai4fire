@@ -86,9 +86,9 @@ class SimpleConvLSTM(nn.Module):
         # fully-connected part
 
         kernel_size = 3
-        self.se1 = SE_Block(hidden_size, r=4)
+        # self.se1 = SE_Block(hidden_size, r=4)
         self.conv1 = nn.Conv2d(hidden_size, hidden_size, kernel_size=kernel_size, stride=1, padding=1)
-        self.se2 = SE_Block(hidden_size, r=4)
+        # self.se2 = SE_Block(hidden_size, r=4)
         self.drop1 = nn.Dropout(0.5)
         # self.fc1 = nn.Linear(kernel_size * kernel_size * hidden_size * 16, 16)
         self.fc1 = nn.Linear(10000, 16)
@@ -100,9 +100,9 @@ class SimpleConvLSTM(nn.Module):
     def forward(self, x: torch.Tensor):
         _, last_states = self.convlstm(x)
         x = last_states[0][0]
-        x = self.se1(x)
+        # x = self.se1(x)
         x = F.relu(self.conv1(x))
-        x = self.se2(x)
+        # x = self.se2(x)
         x = torch.flatten(x, 1)
         print(x.shape)
         x = F.relu(self.drop1(self.fc1(x)))
