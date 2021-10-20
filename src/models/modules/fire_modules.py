@@ -101,10 +101,9 @@ class SimpleConvLSTM(nn.Module):
         _, last_states = self.convlstm(x)
         x = last_states[0][0]
         # x = self.se1(x)
-        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(F.relu(self.conv1(x)), 2)
         # x = self.se2(x)
         x = torch.flatten(x, 1)
-        print(x.shape)
         x = F.relu(self.drop1(self.fc1(x)))
         x = F.relu(self.drop1(self.fc2(x)))
         x = self.fc3(x)
