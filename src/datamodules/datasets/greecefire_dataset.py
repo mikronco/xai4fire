@@ -49,15 +49,79 @@ if run == 'remote':
     url = 'https://storage.de.cloud.ovh.net/v1/AUTH_84d6da8e37fe4bb5aea18902da8c1170/uc3/uc3cube.zarr'
     ds = xr.open_zarr(fsspec.get_mapper(url), consolidated=True)
 else:
-    ds = xr.open_dataset(datacube_path / 'dataset_greece_unzipped.nc')
+    ds = xr.open_dataset(datacube_path / 'greece_big.nc')
 
-# TODO Change this to where the datasets are according to your path
 dataset_root = datacube_path / 'datasets'
 ds_paths = {
-    'spatial': dataset_root / 'spatial_dataset_clc_25x25_wmean.nc',
-    'temporal': dataset_root / 'temporal_dataset_clc_10_wmean.nc',
+    'spatial': dataset_root / 'new_spatial_dataset_clc_25x25_wmean.nc',
+    'temporal': dataset_root / 'new_temporal_dataset_clc_10_wmean.nc',
     'spatiotemporal': dataset_root / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'
 }
+
+
+class FireDSnp(Dataset):
+    def __init__(self, access_mode: str = 'spatiotemporal',
+                 problem_class: str = 'classification',
+                 train_val_test: str = 'train', dynamic_features: list = None, static_features: list = None,
+                 categorical_features: list = None, nan_fill: float = -1.):
+        """
+        @param access_mode: spatial, temporal or spatiotemporal
+        @param problem_class: classification or segmentation
+        @param train_val_test:
+                'train' gets samples from [2009-2018].
+                'val' gets samples from 2019.
+                test' get samples from 2020
+        @param dynamic_features: selects the dynamic features to return
+        @param static_features: selects the static features to return
+        @param categorical_features: selects the categorical features
+        @param nan_fill: Fills nan with the value specified here
+        """
+        if static_features is None:
+            static_features = all_static_features
+        if dynamic_features is None:
+            dynamic_features = all_dynamic_features
+        self.static_features = static_features
+        self.dynamic_features = dynamic_features
+        self.categorical_features = categorical_features
+        self.access_mode = access_mode
+        self.problem_class = problem_class
+        self.nan_fill = nan_fill
+        assert problem_class in ['classification', 'segmentation']
+        if problem_class == 'classification':
+            self.target = 'burned'
+        else:
+            self.target = 'burned_areas'
+        assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
+        dataset_path = dataset_root / self.access_mode
+        self.path_list = [x for x in (dataset_root / self.access_mode).glob('*')]
+        self.train_path_list = [x for x in dataset_path.glob('*') if x.stem[:4] not in ['2020', '2021', '2019']]
+        self.val_path_list = [x for x in dataset_path.glob('2019*')]
+        self.test_path_list = [x for x in dataset_path.glob('2020*')]
+
+        if train_val_test == 'train':
+            self.path_list = self.train_path_list
+        elif train_val_test == 'val':
+            self.path_list = self.val_path_list
+        elif train_val_test == 'test':
+            self.path_list = self.test_path_list
+
+    def __len__(self):
+        return len(self.path_list)
+
+    def __getitem__(self, idx):
+        chunk = np.load(self.path_list[idx])
+
+        dynamic = np.stack([chunk[feature] for feature in self.dynamic_features])
+        # lstm, convlstm expect input that has the time dimension first
+        if 'temp' in self.access_mode:
+            dynamic = np.moveaxis(dynamic, 0, 1)
+        static = np.stack([chunk[feature] for feature in self.static_features])
+        labels = chunk[self.target]
+        if self.nan_fill:
+            dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
+            static = np.nan_to_num(static, nan=self.nan_fill)
+        labels = np.nan_to_num(labels, nan=0.0)
+        return dynamic, static, 0, labels
 
 
 class FireDS(Dataset):
@@ -66,10 +130,12 @@ class FireDS(Dataset):
                  train_val_test: str = 'train', dynamic_features: list = None, static_features: list = None,
                  categorical_features: list = None, nan_fill: float = -1.):
         """
-        @param data_dir: root path that containts dataset as netcdf (.nc) files
         @param access_mode: spatial, temporal or spatiotemporal
         @param problem_class: classification or segmentation
-        @param train: True gets samples from [2009-2019]. False get samples from 2020
+        @param train_val_test:
+                'train' gets samples from [2009-2018].
+                'val' gets samples from 2019.
+                test' get samples from 2020
         @param dynamic_features: selects the dynamic features to return
         @param static_features: selects the static features to return
         @param categorical_features: selects the categorical features
@@ -101,9 +167,9 @@ class FireDS(Dataset):
         else:
             dates = pd.DatetimeIndex(self.ds.isel(time=0).time_.values)
 
-        val_year = 2020
+        val_year = 2019
         test_year = 2020
-        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([val_year, test_year]))[0]))
+        self.train_ds = self.ds.isel(patch=list(np.where(~dates.year.isin([val_year, test_year, 2021]))[0]))
         self.val_ds = self.ds.isel(patch=list(np.where(dates.year == val_year)[0]))
         self.test_ds = self.ds.isel(patch=list(np.where(dates.year == test_year)[0]))
 
@@ -114,7 +180,11 @@ class FireDS(Dataset):
         elif train_val_test == 'test':
             self.ds = self.test_ds
 
-        self.ds = self.ds.load()
+        load = True
+        print("Loading dataset")
+        if load:
+            self.ds = self.ds.load()
+        print("Dataset loaded")
 
     def __len__(self):
         return len(self.ds.patch)
@@ -130,6 +200,7 @@ class FireDS(Dataset):
         if self.nan_fill:
             dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
             static = np.nan_to_num(static, nan=self.nan_fill)
+        labels = np.nan_to_num(labels, nan=0.0)
         return dynamic, static, 0, labels
 
 
@@ -147,12 +218,12 @@ def get_pixel_feature_ds(the_ds, t=0, x=0, y=0, access_mode='temporal', patch_si
     #     len_y = ds.dims['y'] - patch_size
     if access_mode == 'spatiotemporal':
         block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=slice(x - patch_half, x + patch_half + 1),
-                            y=slice(y - patch_half, y + patch_half + 1))#.reset_index(['x', 'y', 'time'])
+                            y=slice(y - patch_half, y + patch_half + 1))  # .reset_index(['x', 'y', 'time'])
     elif access_mode == 'temporal':
         block = the_ds.isel(time=slice(t + 1 - lag, t + 1), x=x, y=y).reset_index(['time'])
     elif access_mode == 'spatial':
         block = the_ds.isel(x=slice(x - patch_half, x + patch_half + 1),
-                            y=slice(y - patch_half, y + patch_half + 1))#.reset_index(['x', 'y'])
+                            y=slice(y - patch_half, y + patch_half + 1))  # .reset_index(['x', 'y'])
 
     return block
 
@@ -193,7 +264,7 @@ class FireDatasetWholeDay(Dataset):
         mean_ds_path = ds_paths[access_mode]
         self.mean_ds = xr.open_dataset(mean_ds_path)
         print(self.ds)
-        # self.ds = self.ds.load()
+        self.ds = self.ds.load()
         print("Dataset loaded...")
         pixel_range = patch_size // 2
         self.pixel_range = pixel_range
