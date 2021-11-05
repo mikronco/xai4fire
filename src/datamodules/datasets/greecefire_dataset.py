@@ -11,6 +11,7 @@ import os
 import torchvision
 from torch.utils.data import Dataset, DataLoader, TensorDataset
 from pathlib import Path
+import random
 
 all_dynamic_features = [
     'Fpar_500m',
@@ -52,11 +53,16 @@ else:
     ds = xr.open_dataset(datacube_path / 'greece_big.nc')
 
 dataset_root = datacube_path / 'datasets'
-ds_paths = {
-    'spatial': dataset_root / 'new_spatial_dataset_clc_25x25_wmean.nc',
-    'temporal': dataset_root / 'new_temporal_dataset_clc_10_wmean.nc',
-    'spatiotemporal': dataset_root / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'
-}
+ds_paths = \
+    {
+        'classification':
+            {'spatial': dataset_root / 'new_spatial_dataset_clc_25x25_wmean.nc',
+             'temporal': dataset_root / 'new_temporal_dataset_clc_10_wmean.nc',
+             'spatiotemporal': dataset_root / 'spatiotemporal_dataset_clc_10x25x25_wmean.nc'},
+        'segmentation':
+            {'spatial': dataset_root / 'new_spatial_dataset_clc_25x25_wmean.nc',
+             'spatiotemporal': dataset_root / '../chunked_new_segmentation_spatiotemporal_dataset_clc_10x125x125_wmean.nc'}
+    }
 
 
 class FireDSnp(Dataset):
@@ -158,7 +164,7 @@ class FireDS(Dataset):
             self.target = 'burned_areas'
         assert self.access_mode in ['spatial', 'temporal', 'spatiotemporal']
 
-        ds_path = ds_paths[access_mode]
+        ds_path = ds_paths[problem_class][access_mode]
 
         self.ds_orig = ds
         self.ds = xr.open_dataset(ds_path)
@@ -179,18 +185,20 @@ class FireDS(Dataset):
             self.ds = self.val_ds
         elif train_val_test == 'test':
             self.ds = self.test_ds
-
-        load = True
-        print("Loading dataset")
-        if load:
-            self.ds = self.ds.load()
-        print("Dataset loaded")
+        #
+        # load = True
+        # print("Loading dataset")
+        # print(self.ds)
+        # if load:
+        #     self.ds = self.ds.load()
+        # print("Dataset loaded")
 
     def __len__(self):
         return len(self.ds.patch)
 
     def __getitem__(self, idx):
-        chunk = self.ds.isel(patch=idx)
+
+        chunk = self.ds.isel(patch=idx).load()
         dynamic = np.stack([norm_ds(chunk, chunk, feature) for feature in self.dynamic_features])
         # lstm, convlstm expect input that has the time dimension first
         if 'temp' in self.access_mode:
@@ -200,7 +208,15 @@ class FireDS(Dataset):
         if self.nan_fill:
             dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
             static = np.nan_to_num(static, nan=self.nan_fill)
+
         labels = np.nan_to_num(labels, nan=0.0)
+        labels[labels == 2] = 1
+        crop_size = 65
+        random_start_x = random.randint(0, 125 - crop_size)
+        random_start_y = random.randint(0, 125 - crop_size)
+        dynamic = dynamic[:, :, random_start_x:random_start_x + crop_size, random_start_y:random_start_y + crop_size]
+        static = static[:, random_start_x:random_start_x + crop_size, random_start_y:random_start_y + crop_size]
+        labels = labels[random_start_x:random_start_x + crop_size, random_start_y:random_start_y + crop_size]
         return dynamic, static, 0, labels
 
 
@@ -247,8 +263,9 @@ def get_pixel_feature_vector(the_ds, mean_ds, t=0, x=0, y=0, access_mode='tempor
 
 
 class FireDatasetWholeDay(Dataset):
-    def __init__(self, day, access_mode='temporal', patch_size=0, lag=10, dynamic_features=None,
-                 static_features=None, nan_fill=-1.0, override_whole=False):
+    def __init__(self, day, access_mode='temporal', problem_class='classification', patch_size=0, lag=10,
+                 dynamic_features=None,
+                 static_features=None, nan_fill=-1.0):
         """
         Args:
             csv_file (string): Path to the csv file with annotations.
@@ -256,12 +273,16 @@ class FireDatasetWholeDay(Dataset):
             dynamic_transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
+        assert access_mode in ['temporal', 'spatial', 'spatiotemporal']
+        assert problem_class in ['classificaiton', 'segmentation']
+        self.problem_class = problem_class
         if lag > 0:
             self.ds = ds.isel(time=range(day - lag + 1, day + 1))
         else:
             self.ds = ds.isel(time=day)
-        self.override_whole = override_whole
-        mean_ds_path = ds_paths[access_mode]
+        self.override_whole = problem_class == 'segmentation'
+        mean_ds_path = ds_paths[problem_class][access_mode]
+
         self.mean_ds = xr.open_dataset(mean_ds_path)
         print(self.ds)
         self.ds = self.ds.load()
@@ -327,7 +348,7 @@ class FireDatasetWholeDay(Dataset):
         self.static_features = static_features
 
     def __len__(self):
-        if self.override_whole:
+        if self.problem_class == 'segmentation':
             return 1
         return self.len_x * self.len_y
 

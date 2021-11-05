@@ -5,7 +5,8 @@ gpus: 1
 
 min_epochs: 1
 max_epochs: 300
+check_val_every_n_epoch: 1
 
-weights_summary: null
+weights_summary: full
 progress_bar_refresh_rate: 5
 resume_from_checkpoint: null

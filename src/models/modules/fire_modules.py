@@ -1,4 +1,5 @@
 from typing import Any, List
+import torch
 import torch.nn.functional as F
 from pytorch_lightning import LightningModule
 from torchmetrics.classification.accuracy import Accuracy
@@ -6,9 +7,6 @@ from torchmetrics import AUC, ConfusionMatrix, AUROC
 from src.models.modules.simple_dense_net import SimpleDenseNet
 import torch
 from torch import nn
-# torch.multiprocessing.set_start_method('fork')
-# torch.multiprocessing.set_start_method('fork', force=True)
-# print(torch.multiprocessing.get_start_method())
 import xarray as xr
 import netCDF4
 from pathlib import Path
@@ -40,6 +38,7 @@ from fastai.vision.models import unet
 
 class SE_Block(nn.Module):
     "credits: https://github.com/moskomule/senet.pytorch/blob/master/senet/se_module.py#L4"
+
     def __init__(self, c, r=1):
         super().__init__()
         self.squeeze = nn.AdaptiveAvgPool2d(1)
@@ -397,6 +396,27 @@ class DynUnet(nn.Module):
         return torch.nn.functional.log_softmax(out, dim=1)
 
 
+class DynUnetConvLSTM(nn.Module):
+    def __init__(self, hparams: dict):
+        super(DynUnetConvLSTM, self).__init__()
+        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
+        hidden_size = hparams['hidden_size']
+        lstm_layers = hparams['lstm_layers']
+        self.convlstm = ConvLSTM(input_dim, hidden_size, (3, 3), 1, True, True, False)
+        self.se1 = SE_Block(hidden_size, r=input_dim)
+        m = resnet18()
+        m = nn.Sequential(*list(m.children())[:-2])
+        m[0] = nn.Conv2d(hidden_size, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        self.net = unet.DynamicUnet(m, 2, (65, 65), norm_type=None)
+
+    def forward(self, x):
+        _, last_states = self.convlstm(x)
+        last = last_states[0][0]
+        x = self.se1(F.relu(last))
+        out = self.net(x)
+        return torch.nn.functional.log_softmax(out, dim=1)
+
+
 class ConvLSTMCell(nn.Module):
     def __init__(self, input_dim, hidden_dim, kernel_size, bias):
         """
@@ -450,31 +470,6 @@ class ConvLSTMCell(nn.Module):
         height, width = image_size
         return (torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device),
                 torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device))
-
-
-class DynConvLSTMUnet(nn.Module):
-    def __init__(self, hparams: dict):
-        super(DynUnet, self).__init__()
-        input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
-        m = resnet18()
-        m = nn.Sequential(*list(m.children())[:-2])
-        m[0] = nn.Conv2d(input_dim, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.net = unet.DynamicUnet(m, 2, (25, 25), norm_type=None)
-
-        def forward(self, x):
-            out = self.net(x)
-            return torch.nn.functional.log_softmax(out, dim=1)
-
-    # self.convlstm = ConvLSTM(input_dim,
-    #                          hidden_size,
-    #                          (3, 3),
-    #                          lstm_layers,
-    #                          True,
-    #                          True,
-    #                          False)
-    #
-    # _, last_states = self.convlstm(x)
-    # x = last_states[0][0]
 
 
 class Resnet18CNN(nn.Module):

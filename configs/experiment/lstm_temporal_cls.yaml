@@ -28,11 +28,11 @@ model:
 
 datamodule:
   batch_size: 128
-  num_workers: 16
-  pin_memory: True
+  num_workers: 32
+  pin_memory: False
   access_mode: 'temporal'
   problem_class: 'classification'
-  nan_fill: -1.0
+  nan_fill: -0.1
 
 trainer:
   max_epochs: 50

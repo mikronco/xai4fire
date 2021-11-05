@@ -288,7 +288,6 @@ class LogValPredictions(Callback):
         if self.ready:
             logger = get_wandb_logger(trainer=trainer)
             experiment = logger.experiment
-
             preds_proba = torch.cat(self.preds_proba[:self.num_samples]).cpu().numpy()
             targets = torch.cat(self.targets[:self.num_samples]).cpu().numpy()
 
@@ -314,7 +313,7 @@ class LogMapPredictions(Callback):
     """
 
     def __init__(self, days: list, access_mode: str, dynamic_features: list, static_features: list, batch_size: int,
-                 num_workers: int, nan_fill: float, override_whole: bool):
+                 num_workers: int, nan_fill: float, problem_class: str):
         super().__init__()
         self.lag, self.patch_size = (0, 0)
         self.access_mode = access_mode
@@ -323,7 +322,7 @@ class LogMapPredictions(Callback):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.nan_fill = nan_fill
-        self.override_whole = override_whole
+        self.problem_class = problem_class
         if access_mode == 'temporal':
             self.lag, self.patch_size = (10, 0)
         if access_mode == 'spatial':
@@ -333,7 +332,7 @@ class LogMapPredictions(Callback):
         self.days = days
 
         self.ready = True
-        self.override_whole = override_whole
+        self.override_whole = (problem_class == 'segmentation')
 
     def on_sanity_check_start(self, trainer, pl_module):
         self.ready = False
@@ -344,8 +343,12 @@ class LogMapPredictions(Callback):
 
     def on_train_end(self, trainer, pl_module):
         if self.ready:
+            device = pl_module.device
+            pl_module.to('cpu')
             if pl_module.on_gpu:
                 torch.cuda.empty_cache()
+
+
             pl_module.eval()
             logger = get_wandb_logger(trainer=trainer)
             experiment = logger.experiment
@@ -356,9 +359,9 @@ class LogMapPredictions(Callback):
                 print(day)
                 # get a validation batch from the validation dat loader
                 outputs = []
-                dataset = FireDatasetWholeDay(day, self.access_mode, self.patch_size, self.lag, self.dynamic_features,
+                dataset = FireDatasetWholeDay(day, self.access_mode, self.problem_class, self.patch_size, self.lag, self.dynamic_features,
                                               self.static_features,
-                                              self.nan_fill, self.override_whole)
+                                              self.nan_fill)
                 len_x = dataset.len_x
                 len_y = dataset.len_y
                 self.num_iterations = max(1, len(dataset) // self.batch_size)
@@ -369,10 +372,19 @@ class LogMapPredictions(Callback):
                     if self.override_whole:
                         dynamic = dynamic.float()
                         static = static.float()
-                        inputs = torch.cat([dynamic, static], dim=1)
+                        if self.access_mode == 'spatial':
+                            inputs = torch.cat([dynamic, static], dim=1)
+                        else:
+                            print("Shapes", dynamic.shape, static.shape)
+                            bsize, timesteps, _, _, _ = dynamic.shape
+                            static = static.unsqueeze(dim=1)
+                            repeat_list = [1 for _ in range(static.dim())]
+                            repeat_list[1] = timesteps
+                            static = static.repeat(repeat_list)
+                            inputs = torch.cat([dynamic, static], dim=2).float()
                         if pl_module.on_gpu:
                             inputs = inputs.cuda()
-                            logits = pl_module(inputs).squeeze()
+                        logits = pl_module(inputs).squeeze()
                         preds_proba = torch.exp(logits[1])
                         im = plt.imshow(preds_proba.detach().cpu().numpy().squeeze(), cmap='Spectral_r')
                         # Log the plot
@@ -411,3 +423,4 @@ class LogMapPredictions(Callback):
                 plt.tight_layout()
                 # Log the plot
                 experiment.log({f"Fire Danger Map {day}": im})
+            pl_module.to(device)

@@ -1,36 +1,40 @@
-model_checkpoint:
-  _target_: pytorch_lightning.callbacks.ModelCheckpoint
-  monitor: "val/auc" # name of the logged metric which determines when model is improving
-  mode: "max" # can be "max" or "min"
-  save_top_k: 1 # save k best models (determined by above metric)
-  save_last: True # additionaly always save model from last epoch
-  verbose: True
-  dirpath: "checkpoints/"
-  filename: "epoch_{epoch:03d}"
-  auto_insert_metric_name: False
+#model_checkpoint:
+#  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+#  monitor: "val/auroc" # name of the logged metric which determines when model is improving
+#  mode: "max" # can be "max" or "min"
+#  save_top_k: 1 # save k best models (determined by above metric)
+#  save_last: True # additionaly always save model from last epoch
+#  verbose: True
+#  dirpath: "checkpoints/"
+#  filename: "epoch_{epoch:03d}"
+#  auto_insert_metric_name: False
+#
+#early_stopping:
+#  _target_: pytorch_lightning.callbacks.EarlyStopping
+#  monitor: "val/auroc" # name of the logged metric which determines when model is improving
+#  mode: "max" # can be "max" or "min"
+#  patience: 200 # how many epochs of not improving until training stops
+#  min_delta: 0 # minimum change in the monitored metric needed to qualify as an improvement
 
-early_stopping:
-  _target_: pytorch_lightning.callbacks.EarlyStopping
-  monitor: "val/auc" # name of the logged metric which determines when model is improving
-  mode: "max" # can be "max" or "min"
-  patience: 200 # how many epochs of not improving until training stops
-  min_delta: 0 # minimum change in the monitored metric needed to qualify as an improvement
+#log_f1_precision_recall_heatmap:
+#  _target_: src.callbacks.wandb_callbacks.LogF1PrecRecHeatmap
+#
+#log_confusion_matrix:
+#  _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
 
-log_f1_precision_recall_heatmap:
-  _target_: src.callbacks.wandb_callbacks.LogF1PrecRecHeatmap
-
-log_confusion_matrix:
-  _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
+log_val_predictions:
+    _target_: src.callbacks.wandb_callbacks.LogValPredictions
+    num_samples: 16
 
 
-#log_map_predictions:
-#  _target_: src.callbacks.wandb_callbacks.LogMapPredictions
-#  dynamic_features: ${sel_dynamic_features}
-#  static_features: ${sel_static_features}
-#  access_mode: ${datamodule.access_mode}
-#  nan_fill: ${datamodule.nan_fill}
-#  batch_size: ${datamodule.batch_size}
-#  num_workers: ${datamodule.num_workers}
-#  days: [4150, 4155, 4240]
-#  override_whole: False
+log_map_predictions:
+  _target_: src.callbacks.wandb_callbacks.LogMapPredictions
+  dynamic_features: ${sel_dynamic_features}
+  static_features: ${sel_static_features}
+  access_mode: ${datamodule.access_mode}
+  nan_fill: ${datamodule.nan_fill}
+  batch_size: ${datamodule.batch_size}
+  num_workers: ${datamodule.num_workers}
+  days: [4155, 4150, 4240]
+  problem_class: ${datamodule.problem_class}
 
