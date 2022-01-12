@@ -294,7 +294,8 @@ class LogValPredictions(Callback):
             imgs = []
             for i in range(self.num_samples):
                 imgs.append(wandb.Image(plt.imshow(targets[i].squeeze(), cmap='Spectral_r'), caption=f'Target {i}'))
-                imgs.append(wandb.Image(plt.imshow(preds_proba[i].squeeze(), cmap='Spectral_r'), caption=f'Prediction {i}'))
+                imgs.append(
+                    wandb.Image(plt.imshow(preds_proba[i].squeeze(), cmap='Spectral_r'), caption=f'Prediction {i}'))
 
             # log the images as wandb Image
             experiment.log(
@@ -332,6 +333,7 @@ class LogMapPredictions(Callback):
         self.days = days
 
         self.ready = True
+        self.problem_class = problem_class
         self.override_whole = (problem_class == 'segmentation')
 
     def on_sanity_check_start(self, trainer, pl_module):
@@ -342,32 +344,32 @@ class LogMapPredictions(Callback):
         self.ready = True
 
     def on_train_end(self, trainer, pl_module):
+        logger = get_wandb_logger(trainer=trainer)
+        experiment = logger.experiment
+        print("LogMapPredictionsCNN callback")
         if self.ready:
             device = pl_module.device
-            pl_module.to('cpu')
+            # pl_module.to('cpu')
             if pl_module.on_gpu:
                 torch.cuda.empty_cache()
 
-
             pl_module.eval()
-            logger = get_wandb_logger(trainer=trainer)
-            experiment = logger.experiment
-            print("LogMapPredictionsCNN callback")
 
             for day in self.days:
                 day = int(day)
                 print(day)
                 # get a validation batch from the validation dat loader
                 outputs = []
-                dataset = FireDatasetWholeDay(day, self.access_mode, self.problem_class, self.patch_size, self.lag, self.dynamic_features,
+                dataset = FireDatasetWholeDay(day, self.access_mode, self.problem_class, self.patch_size, self.lag,
+                                              self.dynamic_features,
                                               self.static_features,
                                               self.nan_fill)
                 len_x = dataset.len_x
                 len_y = dataset.len_y
                 self.num_iterations = max(1, len(dataset) // self.batch_size)
                 dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=False,
-                                        num_workers=self.num_workers,
-                                        pin_memory=True)
+                                        num_workers=48,
+                                        pin_memory=False)
                 for i, (dynamic, static) in tqdm(enumerate(dataloader), total=self.num_iterations):
                     if self.override_whole:
                         dynamic = dynamic.float()
@@ -423,4 +425,59 @@ class LogMapPredictions(Callback):
                 plt.tight_layout()
                 # Log the plot
                 experiment.log({f"Fire Danger Map {day}": im})
+                plt.clf()
             pl_module.to(device)
+
+
+from src.utils.plotting import lime_feature_ranking
+
+
+class LogLimeFR(Callback):
+    """Logs a validation batch and their predictions to wandb.
+    Example adapted from:
+        https://wandb.ai/wandb/wandb-lightning/reports/Image-Classification-using-PyTorch-Lightning--VmlldzoyODk1NzY
+    """
+
+    def __init__(self, num_samples=8):
+        super().__init__()
+        self.ready = True
+        self.num_samples = num_samples
+
+    def on_sanity_check_start(self, trainer, pl_module):
+        self.ready = False
+
+    def on_sanity_check_end(self, trainer, pl_module):
+        """Start executing this callback only after all validation sanity checks end."""
+        self.ready = True
+
+    def on_validation_epoch_end(self, trainer, pl_module):
+        if self.ready:
+            logger = get_wandb_logger(trainer=trainer)
+            experiment = logger.experiment
+
+            # get a validation batch from the validation dat loader
+            val_samples = next(iter(trainer.datamodule.val_dataloader()))
+            val_dynamic, val_static, _, val_labels = val_samples
+            l = []
+            sample_size = min(self.num_samples, len(val_labels))
+            for i in range(sample_size):
+                l.append(lime_feature_ranking(pl_module,
+                                              val_dynamic[i].unsqueeze(0).to(device=pl_module.device),
+                                              val_static[i].unsqueeze(0).to(device=pl_module.device),
+                                              val_labels[i].to(device=pl_module.device),
+                                              pl_module.hparams['dynamic_features'] + pl_module.hparams[
+                                                  'static_features'],
+                                              pl_module.hparams['access_mode'])
+                         )
+
+            # # run the batch through the network
+            # val_imgs = val_imgs.to(device=pl_module.device)
+            # logits = pl_module(val_imgs)
+            # preds = torch.argmax(logits, axis=-1)
+
+            # log the images as wandb Image
+            # experiment.log({'Lime Feature Ranking': wandb.Image(fig)})
+            # log the images as wandb Image
+            experiment.log({f"Images/{experiment.name}":
+                                [wandb.Image(x, caption=f"Lime - Pred:{pred:.2f} / Label:{y}") for x, pred, y in l]})
+            plt.clf()

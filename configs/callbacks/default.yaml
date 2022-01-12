@@ -16,16 +16,18 @@
 #  patience: 200 # how many epochs of not improving until training stops
 #  min_delta: 0 # minimum change in the monitored metric needed to qualify as an improvement
 
-#log_f1_precision_recall_heatmap:
-#  _target_: src.callbacks.wandb_callbacks.LogF1PrecRecHeatmap
-#
-#log_confusion_matrix:
-#  _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
+log_f1_precision_recall_heatmap:
+  _target_: src.callbacks.wandb_callbacks.LogF1PrecRecHeatmap
 
-log_val_predictions:
-    _target_: src.callbacks.wandb_callbacks.LogValPredictions
-    num_samples: 16
+log_confusion_matrix:
+  _target_: src.callbacks.wandb_callbacks.LogConfusionMatrix
 
+#log_val_predictions:
+#    _target_: src.callbacks.wandb_callbacks.LogValPredictions
+#    num_samples: 16
+
+log_lime_FR:
+  _target_: src.callbacks.wandb_callbacks.LogLimeFR
 
 log_map_predictions:
   _target_: src.callbacks.wandb_callbacks.LogMapPredictions
@@ -33,7 +35,7 @@ log_map_predictions:
   static_features: ${sel_static_features}
   access_mode: ${datamodule.access_mode}
   nan_fill: ${datamodule.nan_fill}
-  batch_size: ${datamodule.batch_size}
+  batch_size: 256
   num_workers: ${datamodule.num_workers}
   days: [4155, 4150, 4240]
   problem_class: ${datamodule.problem_class}
