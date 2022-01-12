@@ -1,13 +1,35 @@
 from typing import Any, List
-import torch.nn.functional as F
-from pytorch_lightning import LightningModule
-from torchmetrics.classification.accuracy import Accuracy
-from torchmetrics import AUC, ConfusionMatrix, AUROC, AveragePrecision
-from src.models.modules.fire_modules import SK_CNN, SK_LSTM, SK_CLSTM, SimpleLSTM, SimpleLSTMAttention, SimpleConvLSTM, \
-    SimpleCNN, Resnet18CNN, \
-    DynUnet, SimpleFCN
+
 import torch
-import numpy as np
+from pytorch_lightning import LightningModule
+from torchmetrics import AUROC, AveragePrecision
+from torchmetrics.classification.accuracy import Accuracy
+
+from src.models.modules.fire_modules import SK_CNN, SK_LSTM, SimpleLSTMAttention, SimpleConvLSTM, \
+    DynUnet, SimpleFCN
+
+
+def combine_dynamic_static_inputs(dynamic, static, access_mode):
+    assert access_mode in ['spatial', 'temporal', 'spatiotemporal']
+    if access_mode == 'spatial':
+        dynamic = dynamic.float()
+        static = static.float()
+        inputs = torch.cat([dynamic, static], dim=1)
+    elif access_mode == 'temporal':
+        bsize, timesteps, _ = dynamic.shape
+        static = static.unsqueeze(dim=1)
+        repeat_list = [1 for _ in range(static.dim())]
+        repeat_list[1] = timesteps
+        static = static.repeat(repeat_list)
+        inputs = torch.cat([dynamic, static], dim=2).float()
+    else:
+        bsize, timesteps, _, _, _ = dynamic.shape
+        static = static.unsqueeze(dim=1)
+        repeat_list = [1 for _ in range(static.dim())]
+        repeat_list[1] = timesteps
+        static = static.repeat(repeat_list)
+        inputs = torch.cat([dynamic, static], dim=2).float()
+    return inputs
 
 
 class ConvLSTM_fire_model(LightningModule):
@@ -33,7 +55,9 @@ class ConvLSTM_fire_model(LightningModule):
             positive_weight: float = 0.5,
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
-            weight_decay: float = 0.0005):
+            weight_decay: float = 0.0005,
+            access_mode='temporal'
+    ):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
         # it also allows to access params with 'self.hparams' attribute
@@ -43,6 +67,7 @@ class ConvLSTM_fire_model(LightningModule):
         # self.model = SK_CLSTM(hparams=self.hparams)
 
         # loss function
+
         self.criterion = torch.nn.NLLLoss(weight=torch.tensor([1. - positive_weight, positive_weight]))
         # use separate metric instance for train, val and test step
         # to ensure a proper reduction over the epoch
@@ -66,12 +91,7 @@ class ConvLSTM_fire_model(LightningModule):
     def step(self, batch: Any):
         dynamic, static, _, y = batch
         y = y.long()
-        bsize, timesteps, _, _, _ = dynamic.shape
-        static = static.unsqueeze(dim=1)
-        repeat_list = [1 for _ in range(static.dim())]
-        repeat_list[1] = timesteps
-        static = static.repeat(repeat_list)
-        inputs = torch.cat([dynamic, static], dim=2).float()
+        inputs = combine_dynamic_static_inputs(dynamic, static, 'spatiotemporal')
         logits = self.forward(inputs)
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
@@ -82,16 +102,15 @@ class ConvLSTM_fire_model(LightningModule):
         loss, preds, preds_proba, targets = self.step(batch)
         phase = 'train'
 
-
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.train_accuracy.update(preds, targets)
+        self.train_auc.update(preds_proba, targets)
+        self.train_auprc.update(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auprc", self.train_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def training_epoch_end(self, outputs: List[Any]):
@@ -103,14 +122,14 @@ class ConvLSTM_fire_model(LightningModule):
         phase = 'val'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.val_accuracy.update(preds, targets)
+        self.val_auc.update(preds_proba, targets)
+        self.val_auprc.update(preds_proba, targets)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets, "preds_proba": preds_proba}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -121,14 +140,14 @@ class ConvLSTM_fire_model(LightningModule):
         phase = 'test'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.test_accuracy.update(preds, targets)
+        self.test_auc.update(preds_proba, targets)
+        self.test_auprc.update(preds_proba, targets)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("test/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -167,7 +186,8 @@ class LSTM_fire_model(LightningModule):
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005,
-            attention: bool = False
+            attention: bool = False,
+            access_mode='temporal'
     ):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
@@ -203,14 +223,9 @@ class LSTM_fire_model(LightningModule):
     def step(self, batch: Any):
         dynamic, static, _, y = batch
         y = y.long()
-        bsize, timesteps, _ = dynamic.shape
-        static = static.unsqueeze(dim=1)
-        repeat_list = [1 for _ in range(static.dim())]
-        repeat_list[1] = timesteps
-        static = static.repeat(repeat_list)
 
-        # print(dynamic.shape, static.shape)
-        inputs = torch.cat([dynamic, static], dim=2).float()
+        inputs = combine_dynamic_static_inputs(dynamic, static, 'temporal')
+
         logits = self.forward(inputs)
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
@@ -221,16 +236,15 @@ class LSTM_fire_model(LightningModule):
         loss, preds, preds_proba, targets = self.step(batch)
         phase = 'train'
 
-
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.train_accuracy.update(preds, targets)
+        self.train_auc.update(preds_proba, targets)
+        self.train_auprc.update(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auprc", self.train_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def training_epoch_end(self, outputs: List[Any]):
@@ -242,14 +256,14 @@ class LSTM_fire_model(LightningModule):
         phase = 'val'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.val_accuracy.update(preds, targets)
+        self.val_auc.update(preds_proba, targets)
+        self.val_auprc.update(preds_proba, targets)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets, "preds_proba": preds_proba}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -260,14 +274,14 @@ class LSTM_fire_model(LightningModule):
         phase = 'test'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.test_accuracy.update(preds, targets)
+        self.test_auc.update(preds_proba, targets)
+        self.test_auprc.update(preds_proba, targets)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("test/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -354,16 +368,15 @@ class UnetCNN_fire_model(LightningModule):
         loss, preds, preds_proba, targets = self.step(batch)
         phase = 'train'
 
-
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.train_accuracy.update(preds, targets)
+        self.train_auc.update(preds_proba, targets)
+        self.train_auprc.update(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train/auprc", self.train_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def training_epoch_end(self, outputs: List[Any]):
@@ -375,14 +388,14 @@ class UnetCNN_fire_model(LightningModule):
         phase = 'val'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.val_accuracy.update(preds, targets)
+        self.val_auc.update(preds_proba, targets)
+        self.val_auprc.update(preds_proba, targets)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets, "preds_proba": preds_proba}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -393,14 +406,14 @@ class UnetCNN_fire_model(LightningModule):
         phase = 'test'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.test_accuracy.update(preds, targets)
+        self.test_auc.update(preds_proba, targets)
+        self.test_auprc.update(preds_proba, targets)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("test/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_accuracy, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=False)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -475,10 +488,11 @@ class CNN_fire_model(LightningModule):
 
     def step(self, batch: Any):
         dynamic, static, clc, y = batch
-        dynamic = dynamic.float()
-        static = static.float()
+
+        inputs = combine_dynamic_static_inputs(dynamic, static, 'spatial')
+
         y = y.long()
-        logits = self.forward(torch.cat([dynamic, static], dim=1))
+        logits = self.forward(inputs, dim=1)
         loss = self.criterion(logits, y)
         preds = torch.argmax(logits, dim=1)
         preds_proba = torch.exp(logits)[:, 1]
@@ -487,7 +501,6 @@ class CNN_fire_model(LightningModule):
     def training_step(self, batch: Any, batch_idx: int):
         loss, preds, preds_proba, targets = self.step(batch)
         phase = 'train'
-
 
         # log train metrics
         acc = self.train_accuracy(preds, targets)
@@ -509,14 +522,14 @@ class CNN_fire_model(LightningModule):
         phase = 'val'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.val_accuracy.update(preds, targets)
+        self.val_auc.update(preds_proba, targets)
+        self.val_auprc.update(preds_proba, targets)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_accuracy, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "preds": preds, "targets": targets, "preds_proba": preds_proba}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -527,14 +540,14 @@ class CNN_fire_model(LightningModule):
         phase = 'test'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.test_accuracy.update(preds, targets)
+        self.test_auc.update(preds_proba, targets)
+        self.test_auprc.update(preds_proba, targets)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("test/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_accuracy, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
@@ -621,16 +634,15 @@ class FCN_fire_model(LightningModule):
         loss, preds, preds_proba, targets = self.step(batch)
         phase = 'train'
 
-
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.train_accuracy.update(preds, targets)
+        self.train_auc.update(preds_proba, targets)
+        self.train_auprc.update(preds_proba, targets)
 
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("train/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_accuracy, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/auc", self.train_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/auprc", self.train_auprc, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def training_epoch_end(self, outputs: List[Any]):
@@ -642,14 +654,14 @@ class FCN_fire_model(LightningModule):
         phase = 'val'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.val_accuracy.update(preds, targets)
+        self.val_auc.update(preds_proba, targets)
+        self.val_auprc.update(preds_proba, targets)
 
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("val/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("val/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/acc", self.val_accuracy, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auc", self.val_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("val/auprc", self.val_auprc, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "preds": preds, "targets": targets, "preds_proba": preds_proba}
 
     def validation_epoch_end(self, outputs: List[Any]):
@@ -660,14 +672,14 @@ class FCN_fire_model(LightningModule):
         phase = 'test'
 
         # log train metrics
-        acc = self.train_accuracy(preds, targets)
-        auc = self.train_auc(preds_proba, targets)
-        auprc = self.train_auprc(preds_proba, targets)
+        self.test_accuracy.update(preds, targets)
+        self.test_auc.update(preds_proba, targets)
+        self.test_auprc.update(preds_proba, targets)
 
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=False)
-        self.log("test/acc", acc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auc", auc, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("test/auprc", auprc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/acc", self.test_accuracy, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auc", self.test_auc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("test/auprc", self.test_auprc, on_step=False, on_epoch=True, prog_bar=True)
         return {"loss": loss, "preds": preds, "targets": targets}
 
     def test_epoch_end(self, outputs: List[Any]):
