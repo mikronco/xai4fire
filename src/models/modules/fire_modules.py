@@ -1,39 +1,13 @@
-from typing import Any, List
-import torch
 import torch.nn.functional as F
-from pytorch_lightning import LightningModule
-from torchmetrics.classification.accuracy import Accuracy
-from torchmetrics import AUC, ConfusionMatrix, AUROC
-from src.models.modules.simple_dense_net import SimpleDenseNet
 import torch
 from torch import nn
-import xarray as xr
-import netCDF4
-from pathlib import Path
-from matplotlib import pyplot as plt
 import numpy as np
-
-np.seterr(divide='ignore', invalid='ignore')
-import warnings
-import pandas as pd
-import sys
-import gc
-import geopandas as gpd
-import rioxarray as rxr
-from shapely.geometry import box
-from affine import Affine
-import sys
-import seaborn as sns
-import rasterio
-import os
-from collections import defaultdict
-import random
-from tqdm import tqdm
-from joblib import Parallel, delayed
-from sklearn.preprocessing import StandardScaler
 from src.models.modules.convlstm import ConvLSTM
 from torchvision.models.resnet import resnet18
 from fastai.vision.models import unet
+
+np.seterr(divide='ignore', invalid='ignore')
+
 
 
 class SE_Block(nn.Module):
@@ -272,13 +246,13 @@ class SK_LSTM(nn.Module):
         input_dim = len(hparams['static_features']) + len(hparams['dynamic_features'])
         hidden_size = hparams['hidden_size']
         lstm_layers = hparams['lstm_layers']
-        self.lstm = nn.LSTM(input_dim, hidden_size=hidden_size, num_layers=1, batch_first=True)
-        self.fc1 = torch.nn.Linear(hidden_size, hidden_size)
+        self.lstm = nn.LSTM(input_dim, hidden_size=hidden_size, num_layers=lstm_layers, batch_first=True)
+        self.fc1 = torch.nn.Linear(hidden_size, hidden_size // 2)
         self.drop1 = torch.nn.Dropout(0.5)
         self.relu = torch.nn.ReLU()
-        self.fc2 = torch.nn.Linear(hidden_size, hidden_size // 2)
+        self.fc2 = torch.nn.Linear(hidden_size // 2, hidden_size // 4)
         self.drop2 = torch.nn.Dropout(0.5)
-        self.fc3 = torch.nn.Linear(hidden_size // 2, 2)
+        self.fc3 = torch.nn.Linear(hidden_size // 4, 2)
         self.fc_nn = torch.nn.Sequential(
             self.fc1,
             self.drop1,
@@ -415,61 +389,6 @@ class DynUnetConvLSTM(nn.Module):
         x = self.se1(F.relu(last))
         out = self.net(x)
         return torch.nn.functional.log_softmax(out, dim=1)
-
-
-class ConvLSTMCell(nn.Module):
-    def __init__(self, input_dim, hidden_dim, kernel_size, bias):
-        """
-        Initialize ConvLSTM cell.
-
-        Parameters
-        ----------
-        input_dim: int
-            Number of channels of input tensor.
-        hidden_dim: int
-            Number of channels of hidden state.
-        kernel_size: (int, int)
-            Size of the convolutional kernel.
-        bias: bool
-            Whether or not to add the bias.
-        """
-
-        super(ConvLSTMCell, self).__init__()
-
-        self.input_dim = input_dim
-        self.hidden_dim = hidden_dim
-
-        self.kernel_size = kernel_size
-        self.padding = kernel_size[0] // 2, kernel_size[1] // 2
-        self.bias = bias
-
-        self.conv = nn.Conv2d(in_channels=self.input_dim + self.hidden_dim,
-                              out_channels=4 * self.hidden_dim,
-                              kernel_size=self.kernel_size,
-                              padding=self.padding,
-                              bias=self.bias)
-
-    def forward(self, input_tensor, cur_state):
-        h_cur, c_cur = cur_state
-
-        combined = torch.cat([input_tensor, h_cur], dim=1)  # concatenate along channel axis
-
-        combined_conv = self.conv(combined)
-        cc_i, cc_f, cc_o, cc_g = torch.split(combined_conv, self.hidden_dim, dim=1)
-        i = torch.sigmoid(cc_i)
-        f = torch.sigmoid(cc_f)
-        o = torch.sigmoid(cc_o)
-        g = torch.tanh(cc_g)
-
-        c_next = f * c_cur + i * g
-        h_next = o * torch.tanh(c_next)
-
-        return h_next, c_next
-
-    def init_hidden(self, batch_size, image_size):
-        height, width = image_size
-        return (torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device),
-                torch.zeros(batch_size, self.hidden_dim, height, width, device=self.conv.weight.device))
 
 
 class Resnet18CNN(nn.Module):
