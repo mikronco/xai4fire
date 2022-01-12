@@ -2,7 +2,8 @@ from typing import Optional, Tuple
 
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader
-from src.datamodules.datasets.greecefire_dataset import FireDatasetWholeDay, FireDS, FireDSnp
+from src.datamodules.datasets.greecefire_dataset import FireDatasetWholeDay, FireDS, FireDSnp, FireDataset_nc, \
+    FireDataset_np, FireDataset_npy
 
 
 class FireDSDataModule(LightningDataModule):
@@ -32,7 +33,7 @@ class FireDSDataModule(LightningDataModule):
             sel_dynamic_features=None,
             sel_static_features=None,
             prefetch_factor: int = 2,
-            persistent_workers: bool = False
+            persistent_workers: bool = True
     ):
         super().__init__()
         if sel_dynamic_features is None:
@@ -56,19 +57,21 @@ class FireDSDataModule(LightningDataModule):
         self.sel_dynamic_features = sel_dynamic_features
         self.sel_static_features = sel_static_features
 
-        self.data_train = FireDS(access_mode=self.access_mode, problem_class=self.problem_class,
-                                   train_val_test='train',
-                                   dynamic_features=self.sel_dynamic_features,
-                                   static_features=self.sel_static_features,
-                                   categorical_features=None, nan_fill=self.nan_fill)
-        self.data_val = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train_val_test='val',
-                                 dynamic_features=self.sel_dynamic_features,
-                                 static_features=self.sel_static_features,
-                                 categorical_features=None, nan_fill=self.nan_fill)
-        self.data_test = FireDS(access_mode=self.access_mode, problem_class=self.problem_class, train_val_test='test',
-                                  dynamic_features=self.sel_dynamic_features,
-                                  static_features=self.sel_static_features,
-                                  categorical_features=None, nan_fill=self.nan_fill)
+        self.data_train = FireDataset_npy(access_mode=self.access_mode, problem_class=self.problem_class,
+                                         train_val_test='train',
+                                         dynamic_features=self.sel_dynamic_features,
+                                         static_features=self.sel_static_features,
+                                         categorical_features=None, nan_fill=self.nan_fill)
+        self.data_val = FireDataset_npy(access_mode=self.access_mode, problem_class=self.problem_class,
+                                       train_val_test='val',
+                                       dynamic_features=self.sel_dynamic_features,
+                                       static_features=self.sel_static_features,
+                                       categorical_features=None, nan_fill=self.nan_fill)
+        self.data_test = FireDataset_npy(access_mode=self.access_mode, problem_class=self.problem_class,
+                                        train_val_test='test',
+                                        dynamic_features=self.sel_dynamic_features,
+                                        static_features=self.sel_static_features,
+                                        categorical_features=None, nan_fill=self.nan_fill)
 
     @property
     def num_classes(self) -> int:
@@ -90,8 +93,8 @@ class FireDSDataModule(LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
             shuffle=True,
-            prefetch_factor=self.batch_size,
-            persistent_workers=True
+            prefetch_factor=self.prefetch_factor,
+            persistent_workers=self.persistent_workers
         )
 
     def val_dataloader(self):
@@ -100,9 +103,9 @@ class FireDSDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            shuffle=True,
-            prefetch_factor=self.batch_size,
-            persistent_workers=True
+            shuffle=False,
+            prefetch_factor=self.prefetch_factor,
+            persistent_workers=self.persistent_workers
         )
 
     def test_dataloader(self):
@@ -111,5 +114,7 @@ class FireDSDataModule(LightningDataModule):
             batch_size=self.val_batch_size,
             num_workers=self.num_workers,
             pin_memory=self.pin_memory,
-            shuffle=True,
+            shuffle=False,
+            prefetch_factor=self.prefetch_factor,
+            persistent_workers=self.persistent_workers
         )
