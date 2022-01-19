@@ -56,7 +56,7 @@ class ConvLSTM_fire_model(LightningModule):
             lr_scheduler_step: int = 10,
             lr_scheduler_gamma: float = 0.1,
             weight_decay: float = 0.0005,
-            access_mode='temporal'
+            access_mode='spatiotemporal'
     ):
         super().__init__()
         # this line ensures params passed to LightningModule will be saved to ckpt
