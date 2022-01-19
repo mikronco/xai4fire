@@ -79,9 +79,9 @@ def train(config: DictConfig) -> Optional[float]:
     # Evaluate model on test set, using the best model achieved during training
     if config.get("test_after_training") and not config.trainer.get("fast_dev_run"):
         log.info("Starting testing with last model!")
-        trainer.test()
+        trainer.test(datamodule=datamodule)
         log.info("Starting testing with best model!")
-        trainer.test(ckpt_path="best")
+        trainer.test(datamodule=datamodule, ckpt_path="best")
 
     # Make sure everything closed properly
     log.info("Finalizing!")
