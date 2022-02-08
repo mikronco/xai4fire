@@ -25,11 +25,11 @@ class FireDSDataModule(LightningDataModule):
     def __init__(
             self,
             batch_size: int = 64,
-            num_workers: int = 0,
+            num_workers: int = 1,
             pin_memory: bool = False,
             access_mode: str = 'temporal',
             problem_class: str = 'classification',
-            nan_fill: float = 1.,
+            nan_fill: float = 0.5,
             sel_dynamic_features=None,
             sel_static_features=None,
             prefetch_factor: int = 2,
