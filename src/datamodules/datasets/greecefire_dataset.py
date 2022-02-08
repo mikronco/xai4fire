@@ -1,3 +1,4 @@
+import numpy.ma as ma
 import torch
 import csv
 import xarray as xr
@@ -654,6 +655,8 @@ class FireDataset_npy(Dataset):
 
     def __getitem__(self, idx):
         path, labels = self.path_list[idx]
+        # torch_path = Path(str(path).replace('npy', 'pt'))
+        # if not torch_path.exists():
         dynamic = np.load(path)
         static = np.load(str(path).replace('dynamic', 'static'))
         if self.access_mode == 'spatial':
@@ -676,8 +679,26 @@ class FireDataset_npy(Dataset):
 
         dynamic = _min_max_scaling(dynamic, self.mm_dict['max']['dynamic'], self.mm_dict['min']['dynamic'])
         static = _min_max_scaling(static, self.mm_dict['max']['static'], self.mm_dict['min']['static'])
+        # feat_mean = np.nanmean(dynamic, axis=0)
+        # Find indices that you need to replace
+        # inds = np.where(np.isnan(dynamic))
+        # Place column means in the indices. Align the arrays using take
+        # dynamic[inds] = np.take(feat_mean, inds[1])
+
+        # dynamic = np.where(np.isnan(dynamic), ma.array(dynamic, mask=np.isnan(dynamic)).mean(axis=1)[:, np.newaxis], dynamic)
 
         if self.nan_fill:
             dynamic = np.nan_to_num(dynamic, nan=self.nan_fill)
             static = np.nan_to_num(static, nan=self.nan_fill)
+        # dynamic = torch.from_numpy(dynamic)
+        # static = torch.from_numpy(static)
+        #     torch_path.parent.mkdir(parents=True, exist_ok=True)
+        #     print(f'Saving {torch_path}')
+        #     torch.save(dynamic, str(torch_path))
+        #     torch_path_static = str(torch_path).replace('dynamic', 'static')
+        #     # print(f'Saving {torch_path_static}')
+        #     torch.save(static, torch_path_static)
+        # else:
+        #     dynamic = torch.load(str(torch_path))
+        #     static = torch.load(str(torch_path).replace('dynamic', 'static'))
         return dynamic, static, 0, labels
