@@ -72,14 +72,17 @@ def lime_feature_ranking(model, dynamic_x, static_x, y, feature_names, access_mo
     fi_vector, ordered_features = list(zip(*result))
     fig, axs = plt.subplots(1, 2, figsize=(12, 6))
 
-    pred = torch.exp(model(x))[:, 1].cpu().detach().numpy()[0]
+    raw_pred = model(x)[:, 1]
+    pred_proba = torch.exp(raw_pred).cpu().detach().numpy()[0]
+    raw_pred = raw_pred.cpu().detach().numpy()[0]
     # ax.set_title(f"Lime Features Ranking - Target {y} / Pred {pred:.2f}")
     axs[0].barh(ordered_features, fi_vector)
-    for i in range(len(feature_names)):
-        if feature_names[i] in ordered_features[:3] + ordered_features[-3:]:
-            axs[1].plot('index', feature_names[i], data=df)
-            axs[1].legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    if access_mode == 'temporal':
+        for i in range(len(feature_names)):
+            if feature_names[i] in ordered_features[:3] + ordered_features[-3:]:
+                axs[1].plot('index', feature_names[i], data=df)
+                axs[1].legend(loc='center left', bbox_to_anchor=(1, 0.5))
     # axs[1].legend()
     fig.tight_layout()
-    fig.suptitle(f'Lime: Pred {pred:.2f} / Label {y}')
-    return fig, pred, y
+    fig.suptitle(f'Lime: Raw Pred {raw_pred:.2f} / Pred {pred_proba:.2f} / Label {y}')
+    return fig, pred_proba, y
